@@ -1,0 +1,23 @@
+augment_prob_none: 0.2
+augment_prob_one: 0.5
+augment_prob_two: 0.3
+
+char_augs:
+  - swap
+  - delete
+  - insert
+  - replace
+  - duplicate
+  - keyboard_typo
+  - case_flip
+  - vowel_sub
+  - consonant_sub
+  - repeat_drop
+
+word_augs:
+  - adjective_remove
+
+# Stress split: slightly more corruption
+stress_augment_prob_none: 0.1
+stress_augment_prob_one: 0.4
+stress_augment_prob_two: 0.5

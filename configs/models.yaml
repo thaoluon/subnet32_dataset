@@ -1,0 +1,15 @@
+# Ollama model tags (install with: ollama pull <name>)
+# Split train vs stress: stress models should be held out from train/val/test when possible.
+ollama_base_url: "http://127.0.0.1:11434"
+
+train_models:
+  - llama3.2
+  - mistral-nemo:12b
+  - qwen2.5:14b
+
+stress_models:
+  - phi4:14b
+  - gemma2:9b
+
+# Optional: single model for dry-run / debugging
+default_model: "llama3.2"

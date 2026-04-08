@@ -1,0 +1,23 @@
+# Subnet32 dataset generator — install into the same venv you use for:
+#   python -m subnet32_dataset.src.dataset_builder
+#
+# Windows / old pip: if you see "TypeError: __hash__ method should return an integer",
+# upgrade pip first (fixes wheel tag parsing with newer packages):
+#   python -m pip install --upgrade pip setuptools wheel
+#
+#   pip install -r subnet32_dataset/requirements.txt
+#
+# Notes:
+# - datasets is pinned to 2.18.0 to match the main repo and avoid pulling datasets 4.x +
+#   huggingface_hub 1.x (heavy tree; can stress old pip resolvers on Windows).
+# - zstandard: required for streaming monology/pile-uncopyrighted (zstd shards).
+# - nltk: sentence splitting + optional adjective removal; punkt downloads on first use.
+# - huggingface-hub: capped below 1.0 so pip does not pull hub 1.x (new CLI/API) while on datasets 2.18.
+
+huggingface-hub>=0.19.4,<1.0
+datasets==2.18.0
+requests>=2.31.0
+nltk>=3.8.1
+PyYAML>=6.0.1
+click>=8.1.0
+zstandard>=0.22.0

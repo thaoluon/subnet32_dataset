@@ -1,0 +1,60 @@
+# HuggingFace streaming Pile (same family as validator PromptDataset in this repo)
+huggingface_dataset: "monology/pile-uncopyrighted"
+split: "train"
+shuffle_buffer_size: 100000
+text_field: "text"
+meta_field: "meta"
+
+# Optional: local JSONL with {"text": "...", "meta": {...}} per line (if source: local)
+local_jsonl_path: null
+
+source: "huggingface"  # huggingface | local
+
+# Hugging Face Hub sometimes returns 502/503/504 on dataset tree/API; retry before failing.
+hf_load_max_retries: 15
+hf_load_retry_base_sec: 20
+hf_load_retry_max_sec: 180
+
+# Target mix by coarse domain (0–1, renormalized if some domains missing)
+domain_quotas:
+  web: 0.20
+  academic: 0.20
+  code: 0.10
+  legal: 0.10
+  medical: 0.10
+  financial: 0.10
+  books: 0.20
+
+# Map Pile subset names (from meta) to coarse domains; unknown → weighted random by quotas
+pile_subset_to_domain:
+  "Wikipedia (en)": web
+  "Wikipedia (de)": web
+  "OpenWebText2": web
+  "OpenSubtitles": web
+  "StackExchange": web
+  "Ubuntu IRC": web
+  "YoutubeSubtitles": web
+  "DM Mathematics": academic
+  "Enron Emails": web
+  "EuroParl": web
+  "FreeLaw": legal
+  "HackerNews": web
+  "NIH ExPorter": medical
+  "PubMed Central": medical
+  "USPTO Backgrounds": legal
+  "ArXiv": academic
+  "BookCorpus2": books
+  "Books3": books
+  "Gutenberg (PG-19)": books
+  "Github": code
+  "Pile-CC": web
+  "PhilPapers": academic
+
+random_seed: 42
+default_coarse_domain: web
+
+# Train / val / test / stress ratios (stress is assigned when using stress model list)
+split_ratios:
+  train: 0.80
+  val: 0.10
+  test: 0.10

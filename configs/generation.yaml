@@ -1,0 +1,20 @@
+word_count_min: 80
+word_count_max: 300
+sentence_span_min: 4
+sentence_span_max: 8
+prefix_sentence_min: 2
+prefix_sentence_max: 4
+
+temperature_range: [0.3, 1.2]
+top_p_range: [0.7, 1.0]
+max_tokens_range: [80, 220]
+repeat_penalty_range: [1.0, 1.2]
+
+# Ollama num_predict (max tokens to generate)
+num_predict: 512
+
+# Neutral continuation system prompt (kept short to avoid assistant tone)
+continuation_system: "You are a text completion model. Continue the user's text naturally in the same style. Output only the continuation, no preamble or labels."
+
+# Raw completion for models with :text in name skips system message in code
+use_raw_completion_for_text_models: true
