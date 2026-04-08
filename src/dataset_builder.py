@@ -10,6 +10,8 @@ import click
 
 from .ai_generator import (
     OllamaCompletionClient,
+    OllamaUnreachableError,
+    assert_ollama_reachable,
     combine_prefix_completion,
     is_text_model_name,
     sample_generation_params,
@@ -117,6 +119,9 @@ def run_build(
     balancer = DomainBalancer(quotas)
     loader = PileLoader(ds_cfg)
     ollama_client = OllamaCompletionClient(base_url, gen_cfg) if not skip_ai else None
+    if ollama_client is not None:
+        health_timeout = float(gen_cfg.get("ollama_health_timeout_sec", 5))
+        assert_ollama_reachable(base_url, timeout_sec=health_timeout)
 
     span_min = int(gen_cfg.get("sentence_span_min", 4))
     span_max = int(gen_cfg.get("sentence_span_max", 8))
@@ -302,7 +307,11 @@ def run_build(
 )
 @click.option("--num-pairs", type=int, default=50, help="Number of human+ai pairs to write")
 @click.option("--stress-fraction", type=float, default=0.05, help="Fraction assigned to stress split")
-@click.option("--skip-ai", is_flag=True, help="Only write human samples (no Ollama)")
+@click.option(
+    "--skip-ai",
+    is_flag=True,
+    help="Only write human samples (no Ollama). Use when Ollama is not running.",
+)
 @click.option("--ollama-url", type=str, default=None, help="Override Ollama base URL")
 @click.option("--verbose", is_flag=True)
 def main(
@@ -320,7 +329,10 @@ def main(
     )
     cfg_dir = config_dir or (PACKAGE_ROOT / "configs")
     out = output_dir or (PACKAGE_ROOT / "outputs")
-    run_build(cfg_dir, out, num_pairs, stress_fraction, skip_ai, ollama_url)
+    try:
+        run_build(cfg_dir, out, num_pairs, stress_fraction, skip_ai, ollama_url)
+    except OllamaUnreachableError as e:
+        raise click.ClickException(str(e)) from e
 
 
 if __name__ == "__main__":

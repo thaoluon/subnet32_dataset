@@ -18,3 +18,6 @@ continuation_system: "You are a text completion model. Continue the user's text 
 
 # Raw completion for models with :text in name skips system message in code
 use_raw_completion_for_text_models: true
+
+# Preflight GET /api/tags before streaming Pile (fail fast if Ollama is down)
+ollama_health_timeout_sec: 5

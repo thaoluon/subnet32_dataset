@@ -10,6 +10,25 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+
+class OllamaUnreachableError(RuntimeError):
+    """Raised when the Ollama HTTP API cannot be reached before generation starts."""
+
+
+def assert_ollama_reachable(base_url: str, *, timeout_sec: float = 5.0) -> None:
+    """Fail fast with a clear message if Ollama is not listening (e.g. connection refused)."""
+    url = f"{base_url.rstrip('/')}/api/tags"
+    try:
+        r = requests.get(url, timeout=timeout_sec)
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise OllamaUnreachableError(
+            f"Ollama is not reachable at {base_url} ({e}). "
+            "Start the Ollama app (or run `ollama serve`), ensure models are pulled, "
+            "or build human-only JSONL with: python -m src.dataset_builder --skip-ai ..."
+        ) from e
+
+
 _ASSISTANT_PATTERNS = re.compile(
     r"^(sure[,! ]|here is|here's|okay[,! ]|as an ai|i cannot|i'm an ai)",
     re.IGNORECASE | re.MULTILINE,
