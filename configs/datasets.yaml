@@ -15,6 +15,15 @@ hf_load_max_retries: 15
 hf_load_retry_base_sec: 20
 hf_load_retry_max_sec: 180
 
+# Streaming can fail mid-iteration (e.g. FileNotFoundError on zstd://...hf:// shard after timeouts).
+# Reconnect rebuilds the stream; consumer keeps going until num_pairs (may see duplicate pile docs).
+hf_stream_max_reconnects: 30
+hf_stream_reconnect_base_sec: 15
+hf_stream_reconnect_max_sec: 120
+
+# If unset, Hugging Face Hub default applies; set higher on slow links (seconds). Uses HF_HUB_DOWNLOAD_TIMEOUT.
+hf_hub_download_timeout_sec: 300
+
 # Target mix by coarse domain (0–1, renormalized if some domains missing)
 domain_quotas:
   web: 0.20

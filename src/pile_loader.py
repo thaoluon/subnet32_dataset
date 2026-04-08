@@ -11,6 +11,20 @@ from typing import Any, Iterator
 logger = logging.getLogger(__name__)
 
 
+def _is_retryable_hf_stream_error(exc: BaseException) -> bool:
+    """True when a streaming shard read fails in a way that often succeeds after reconnect."""
+    if _is_retryable_hub_error(exc):
+        return True
+    if isinstance(exc, FileNotFoundError):
+        s = str(exc).lower()
+        return "hf://" in s or "zstd://" in s or "huggingface.co" in s
+    if isinstance(exc, OSError):
+        msg = str(exc).lower()
+        if any(x in msg for x in ("errno 110", "timed out", "connection reset", "broken pipe")):
+            return True
+    return False
+
+
 def _is_retryable_hub_error(exc: BaseException) -> bool:
     """True for transient Hub/network errors (504 Gateway Timeout, rate limits, etc.)."""
     msg = str(exc).lower()
@@ -173,6 +187,8 @@ class PileLoader:
                 )
 
     def _iter_hf(self) -> Iterator[PileDocument]:
+        import os
+
         name = self.config.get("huggingface_dataset", "monology/pile-uncopyrighted")
         split = self.config.get("split", "train")
         buf = int(self.config.get("shuffle_buffer_size", 100_000))
@@ -180,28 +196,52 @@ class PileLoader:
         max_retries = int(self.config.get("hf_load_max_retries", 15))
         base_delay = float(self.config.get("hf_load_retry_base_sec", 20))
         max_delay = float(self.config.get("hf_load_retry_max_sec", 180))
+        stream_reconnects = int(self.config.get("hf_stream_max_reconnects", 30))
+        stream_base = float(self.config.get("hf_stream_reconnect_base_sec", 15))
+        stream_max = float(self.config.get("hf_stream_reconnect_max_sec", 120))
+        timeout_cfg = self.config.get("hf_hub_download_timeout_sec")
+        if timeout_cfg is not None and "HF_HUB_DOWNLOAD_TIMEOUT" not in os.environ:
+            os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = str(int(timeout_cfg))
+
         logger.info("Loading streaming dataset %s split=%s shuffle_buffer=%s", name, split, buf)
 
-        ds = load_dataset_streaming_with_retry(
-            name,
-            split,
-            max_retries=max_retries,
-            base_delay_sec=base_delay,
-            max_delay_sec=max_delay,
-        )
-        ds = ds.shuffle(seed=seed, buffer_size=buf)
-        for row in ds:
-            text = row.get(self.text_field)
-            if not text:
-                continue
-            meta = _parse_meta(row.get(self.meta_field))
-            subset = _subset_name(meta)
-            cid = f"hf_{self._counter}"
-            self._counter += 1
-            coarse = map_to_coarse_domain(subset, self.subset_map, self.default_coarse_domain)
-            yield PileDocument(
-                text=str(text),
-                doc_id=cid,
-                pile_subset=subset,
-                coarse_domain=coarse,
-            )
+        for attempt in range(max(1, stream_reconnects)):
+            try:
+                ds = load_dataset_streaming_with_retry(
+                    name,
+                    split,
+                    max_retries=max_retries,
+                    base_delay_sec=base_delay,
+                    max_delay_sec=max_delay,
+                )
+                ds = ds.shuffle(seed=seed, buffer_size=buf)
+                for row in ds:
+                    text = row.get(self.text_field)
+                    if not text:
+                        continue
+                    meta = _parse_meta(row.get(self.meta_field))
+                    subset = _subset_name(meta)
+                    cid = f"hf_{self._counter}"
+                    self._counter += 1
+                    coarse = map_to_coarse_domain(subset, self.subset_map, self.default_coarse_domain)
+                    yield PileDocument(
+                        text=str(text),
+                        doc_id=cid,
+                        pile_subset=subset,
+                        coarse_domain=coarse,
+                    )
+            except Exception as e:
+                if attempt >= stream_reconnects - 1 or not _is_retryable_hf_stream_error(e):
+                    raise
+                exp = min(stream_max, stream_base * (2**attempt))
+                jitter = random.uniform(0, min(10.0, stream_base))
+                wait = exp + jitter
+                logger.warning(
+                    "HF streaming read failed (%s); reconnect %s/%s in %.0fs "
+                    "(unstable links: raise hf_hub_download_timeout_sec or use source: local).",
+                    e,
+                    attempt + 1,
+                    stream_reconnects,
+                    wait,
+                )
+                time.sleep(wait)
