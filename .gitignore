@@ -49,9 +49,6 @@ htmlcov/
 # NLTK data (often downloaded locally)
 nltk_data/
 
-# Project outputs (generated datasets / runs)
-outputs/
-outputs_smoke/
 
 # OS
 .DS_Store

@@ -1,0 +1,39 @@
+{
+  "num_pairs_target": 2,
+  "pairs_written": 2,
+  "documents_seen": 2,
+  "outputs": {
+    "train": {
+      "path": "subnet32_dataset\\outputs_smoke\\train.jsonl",
+      "num_human": 1,
+      "num_ai": 0,
+      "avg_words_human": 133.0,
+      "avg_words_ai": 0.0,
+      "avg_sentences_human": 6.0,
+      "avg_sentences_ai": 0.0,
+      "augmentation_rate_human": 1.0,
+      "augmentation_rate_ai": 0.0,
+      "domains": {
+        "web": 1.0
+      },
+      "generators": {},
+      "label_balance_ai_share": 0.0
+    },
+    "stress": {
+      "path": "subnet32_dataset\\outputs_smoke\\stress.jsonl",
+      "num_human": 1,
+      "num_ai": 0,
+      "avg_words_human": 109.0,
+      "avg_words_ai": 0.0,
+      "avg_sentences_human": 4.0,
+      "avg_sentences_ai": 0.0,
+      "augmentation_rate_human": 1.0,
+      "augmentation_rate_ai": 0.0,
+      "domains": {
+        "medical": 1.0
+      },
+      "generators": {},
+      "label_balance_ai_share": 0.0
+    }
+  }
+}
