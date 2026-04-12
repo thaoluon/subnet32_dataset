@@ -11,6 +11,19 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _ollama_http_detail(response: requests.Response | None) -> str:
+    if response is None:
+        return ""
+    try:
+        j = response.json()
+        if isinstance(j, dict) and j.get("error"):
+            return str(j["error"]).strip()
+    except ValueError:
+        pass
+    t = (response.text or "").strip()
+    return t[:500] if t else ""
+
+
 class OllamaUnreachableError(RuntimeError):
     """Raised when the Ollama HTTP API cannot be reached before generation starts."""
 
@@ -99,7 +112,12 @@ class OllamaCompletionClient:
                 return text, meta
             except Exception as e:
                 last_err = e
-                logger.warning("Ollama generate failed (%s), retry %s", e, attempt + 1)
+                extra = ""
+                if isinstance(e, requests.exceptions.HTTPError) and e.response is not None:
+                    d = _ollama_http_detail(e.response)
+                    if d:
+                        extra = f" — {d}"
+                logger.warning("Ollama generate failed (%s%s), retry %s", e, extra, attempt + 1)
                 time.sleep(1.5 * (attempt + 1))
         raise RuntimeError(f"Ollama generation failed after retries: {last_err}")
 

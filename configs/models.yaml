@@ -1,15 +1,16 @@
-# Ollama model tags (install with: ollama pull <name>)
-# Split train vs stress: stress models should be held out from train/val/test when possible.
+# Ollama model tags — align with https://ollama.com/library (names change; verify with `ollama pull` / `ollama list`).
+# Train pool: mix of recent instruction models (~8–15 GB quantized each; mistral-small3.2 is ~15 GB).
+# Stress pool: held-out families vs train (different generators for the stress split).
 ollama_base_url: "http://127.0.0.1:11434"
 
 train_models:
-  - llama3.2
-  - mistral-nemo:12b
-  - qwen2.5:14b
+  - mistral-small3.2:24b   # Mistral Small 3.2 (Ollama “latest” line for this family)
+  - qwen3:14b              # Qwen3 dense (newer generation than qwen2.5)
+  - gemma3:12b             # Google Gemma 3 instruct
 
 stress_models:
-  - phi4:14b
-  - gemma2:9b
+  - deepseek-r1:8b         # Reasoning-style model, distinct from train mix
+  - phi4:14b               # Microsoft Phi-4
 
-# Optional: single model for dry-run / debugging
-default_model: "llama3.2"
+# Used if train_models were empty; otherwise first model above is typical for debugging
+default_model: "qwen3:14b"

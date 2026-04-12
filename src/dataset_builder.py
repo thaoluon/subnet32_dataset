@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 import random
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,40 @@ from .validator_matcher import summarize_jsonl
 
 logger = logging.getLogger(__name__)
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+
+_ID_RE = re.compile(r"^s32_([a-z]+)_(\d+)$")
+
+
+def _load_jsonl_output_state(output_dir: Path) -> tuple[set[str], dict[str, int]]:
+    """Hashes already present and highest numeric id per split (for append mode)."""
+    seen_hashes: set[str] = set()
+    max_id_by_split: dict[str, int] = {}
+    for split in ("train", "val", "test", "stress"):
+        path = output_dir / f"{split}.jsonl"
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            h = rec.get("original_text_hash")
+            if isinstance(h, str):
+                seen_hashes.add(h)
+            rid = rec.get("id")
+            if isinstance(rid, str):
+                m = _ID_RE.match(rid)
+                if m and m.group(1) == split:
+                    n = int(m.group(2))
+                    max_id_by_split[split] = max(max_id_by_split.get(split, 0), n)
+    return seen_hashes, max_id_by_split
+
+
+def _truncate_split_jsonls(output_dir: Path) -> None:
+    for split in ("train", "val", "test", "stress"):
+        p = output_dir / f"{split}.jsonl"
+        if p.is_file():
+            p.write_text("", encoding="utf-8")
 
 
 class DomainBalancer:
@@ -97,6 +133,7 @@ def run_build(
     stress_fraction: float,
     skip_ai: bool,
     ollama_url: str | None,
+    append: bool,
 ) -> None:
     ds_cfg = load_yaml(config_dir / "datasets.yaml")
     gen_cfg = load_yaml(config_dir / "generation.yaml")
@@ -134,8 +171,17 @@ def run_build(
     split_ratios = dict(ds_cfg.get("split_ratios") or {"train": 0.8, "val": 0.1, "test": 0.1})
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    if append:
+        seen_hashes, max_id_by_split = _load_jsonl_output_state(output_dir)
+    else:
+        seen_hashes = set()
+        max_id_by_split = {}
+        _truncate_split_jsonls(output_dir)
+
     writers: dict[str, JsonlWriter] = {}
     counters: dict[str, int] = defaultdict(int)
+    for split, n in max_id_by_split.items():
+        counters[split] = n
 
     def writer_for(split: str) -> JsonlWriter:
         if split not in writers:
@@ -173,6 +219,11 @@ def run_build(
             logger.debug("skip human: %s", reason_h)
             continue
 
+        human_hash = text_sha256(human_base)
+        if human_hash in seen_hashes:
+            logger.debug("skip duplicate original_text_hash (human span)")
+            continue
+
         split_writer = writer_for(split)
         hid = next_id(split)
         human_record = {
@@ -192,12 +243,13 @@ def run_build(
             "num_words": word_count(human_final),
             "split": split,
             "span_sentence_indices": [i0, i1],
-            "original_text_hash": text_sha256(human_base),
+            "original_text_hash": human_hash,
             "stress_mode": stress_mode,
         }
 
         if skip_ai:
             split_writer.write(human_record)
+            seen_hashes.add(human_hash)
             balancer.record(doc.coarse_domain)
             pairs_done += 1
             continue
@@ -243,7 +295,13 @@ def run_build(
             logger.debug("skip ai: %s", reason_a)
             continue
 
+        ai_hash = text_sha256(ai_base)
+        if ai_hash in seen_hashes:
+            logger.debug("skip duplicate original_text_hash (ai sample)")
+            continue
+
         split_writer.write(human_record)
+        seen_hashes.add(human_hash)
         balancer.record(doc.coarse_domain)
 
         aid = next_id(split)
@@ -264,10 +322,11 @@ def run_build(
             "num_words": word_count(ai_final),
             "split": split,
             "span_sentence_indices": None,
-            "original_text_hash": text_sha256(ai_base),
+            "original_text_hash": ai_hash,
             "stress_mode": stress_mode,
         }
         split_writer.write(ai_record)
+        seen_hashes.add(ai_hash)
         balancer.record(doc.coarse_domain)
         pairs_done += 1
 
@@ -313,6 +372,11 @@ def run_build(
     help="Only write human samples (no Ollama). Use when Ollama is not running.",
 )
 @click.option("--ollama-url", type=str, default=None, help="Override Ollama base URL")
+@click.option(
+    "--append",
+    is_flag=True,
+    help="Keep existing split JSONLs, continue IDs, and skip rows whose original_text_hash already exists.",
+)
 @click.option("--verbose", is_flag=True)
 def main(
     config_dir: Path | None,
@@ -321,6 +385,7 @@ def main(
     stress_fraction: float,
     skip_ai: bool,
     ollama_url: str | None,
+    append: bool,
     verbose: bool,
 ) -> None:
     logging.basicConfig(
@@ -330,7 +395,7 @@ def main(
     cfg_dir = config_dir or (PACKAGE_ROOT / "configs")
     out = output_dir or (PACKAGE_ROOT / "outputs")
     try:
-        run_build(cfg_dir, out, num_pairs, stress_fraction, skip_ai, ollama_url)
+        run_build(cfg_dir, out, num_pairs, stress_fraction, skip_ai, ollama_url, append)
     except OllamaUnreachableError as e:
         raise click.ClickException(str(e)) from e
 
