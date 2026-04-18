@@ -11,10 +11,11 @@ from typing import Any
 import click
 
 from .ai_generator import (
-    OllamaCompletionClient,
+    OllamaRoundRobinClient,
     OllamaUnreachableError,
     combine_prefix_completion,
     is_text_model_name,
+    resolve_ollama_base_urls,
     sample_generation_params,
     strip_leading_boilerplate,
     trim_to_sentence_boundary,
@@ -195,7 +196,7 @@ def run_build(
     seed = int(ds_cfg.get("random_seed", 42))
     set_global_seed(seed)
 
-    base_url = (ollama_url or model_cfg.get("ollama_base_url", "http://127.0.0.1:11434")).rstrip("/")
+    ollama_urls = resolve_ollama_base_urls(model_cfg, ollama_url)
     train_pool = resolve_train_pool(model_cfg)
     stress_pool = resolve_stress_pool(model_cfg)
     train_pool, stress_pool = strip_openai_if_key_missing(model_cfg, train_pool, stress_pool)
@@ -211,7 +212,7 @@ def run_build(
 
     used_providers = providers_used([train_pool, stress_pool]) if not skip_ai else set()
     ollama_client = (
-        OllamaCompletionClient(base_url, gen_cfg) if (not skip_ai and "ollama" in used_providers) else None
+        OllamaRoundRobinClient(ollama_urls, gen_cfg) if (not skip_ai and "ollama" in used_providers) else None
     )
     openai_cfg = dict(model_cfg.get("openai") or {})
     openai_client = (
@@ -222,7 +223,7 @@ def run_build(
     if not skip_ai:
         assert_generators_configured(
             skip_ai=False,
-            ollama_base_url=base_url,
+            ollama_base_urls=ollama_urls,
             model_cfg=model_cfg,
             gen_cfg=gen_cfg,
             train_pool=train_pool,

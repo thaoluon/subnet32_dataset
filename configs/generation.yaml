@@ -22,6 +22,9 @@ use_raw_completion_for_text_models: true
 # Preflight GET /api/tags before streaming Pile (fail fast if Ollama is down)
 ollama_health_timeout_sec: 5
 
+# HTTP timeout per Ollama/OpenAI generate (seconds). Large quotas: 360–600 avoids false timeouts.
+request_timeout_sec: 420
+
 # --- Hard AI (paraphrase / rewrite of model text) ---
 # Random one is chosen per rewrite for diversity. If the list is empty, hard_transform_system is used.
 hard_transform_systems:

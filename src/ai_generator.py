@@ -42,6 +42,54 @@ def assert_ollama_reachable(base_url: str, *, timeout_sec: float = 5.0) -> None:
         ) from e
 
 
+def resolve_ollama_base_urls(model_cfg: dict[str, Any], cli_override: str | None) -> list[str]:
+    """CLI --ollama-url wins; else ``ollama_base_urls`` list; else single ``ollama_base_url``."""
+    if cli_override:
+        return [str(cli_override).strip().rstrip("/")]
+    raw = model_cfg.get("ollama_base_urls")
+    if isinstance(raw, list) and len(raw) > 0:
+        urls = [str(u).strip().rstrip("/") for u in raw if str(u).strip()]
+        if urls:
+            return urls
+    u = str(model_cfg.get("ollama_base_url", "http://127.0.0.1:11434")).strip().rstrip("/")
+    return [u]
+
+
+def assert_all_ollama_reachable(urls: list[str], *, timeout_sec: float) -> None:
+    for u in urls:
+        assert_ollama_reachable(u, timeout_sec=timeout_sec)
+
+
+class OllamaRoundRobinClient:
+    """
+    Round-robin across several Ollama HTTP endpoints (e.g. one ``ollama serve`` per GPU on
+    different ports). Dispatches each ``generate`` call to the next host.
+    """
+
+    def __init__(self, base_urls: list[str], gen_cfg: dict[str, Any]):
+        urls = [u.strip().rstrip("/") for u in base_urls if u and str(u).strip()]
+        if not urls:
+            urls = ["http://127.0.0.1:11434"]
+        self._clients = [OllamaCompletionClient(u, gen_cfg) for u in urls]
+        self._i = 0
+
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        params: dict[str, Any] | None = None,
+        raw_completion: bool = False,
+        system: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        client = self._clients[self._i % len(self._clients)]
+        self._i += 1
+        text, meta = client.generate(
+            model, prompt, params=params, raw_completion=raw_completion, system=system
+        )
+        meta = {**meta, "ollama_host": client.base_url}
+        return text, meta
+
+
 _ASSISTANT_PATTERNS = re.compile(
     r"^(sure[,! ]|here is|here's|okay[,! ]|as an ai|i cannot|i'm an ai)",
     re.IGNORECASE | re.MULTILINE,

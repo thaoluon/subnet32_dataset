@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from .ai_generator import assert_ollama_reachable
+from .ai_generator import assert_all_ollama_reachable
 from .openai_generator import OpenAINotConfiguredError
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ def strip_openai_if_key_missing(
 def assert_generators_configured(
     *,
     skip_ai: bool,
-    ollama_base_url: str,
+    ollama_base_urls: list[str],
     model_cfg: dict[str, Any],
     gen_cfg: dict[str, Any],
     train_pool: list[GeneratorEntry],
@@ -147,7 +147,7 @@ def assert_generators_configured(
     prov = providers_used([train_pool, stress_pool])
     health_timeout = float(gen_cfg.get("ollama_health_timeout_sec", 5))
     if "ollama" in prov:
-        assert_ollama_reachable(ollama_base_url, timeout_sec=health_timeout)
+        assert_all_ollama_reachable(ollama_base_urls, timeout_sec=health_timeout)
     if "openai" in prov:
         oa = dict(model_cfg.get("openai") or {})
         env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")

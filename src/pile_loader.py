@@ -203,7 +203,21 @@ class PileLoader:
         if timeout_cfg is not None and "HF_HUB_DOWNLOAD_TIMEOUT" not in os.environ:
             os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = str(int(timeout_cfg))
 
-        logger.info("Loading streaming dataset %s split=%s shuffle_buffer=%s", name, split, buf)
+        num_shards = max(1, int(self.config.get("stream_num_shards", 1)))
+        shard_index = int(self.config.get("stream_shard_index", 0))
+        if not (0 <= shard_index < num_shards):
+            raise ValueError(
+                f"datasets.yaml: stream_shard_index must be in [0, stream_num_shards), got {shard_index}/{num_shards}"
+            )
+
+        logger.info(
+            "Loading streaming dataset %s split=%s shuffle_buffer=%s shard=%s/%s",
+            name,
+            split,
+            buf,
+            shard_index,
+            num_shards,
+        )
 
         for attempt in range(max(1, stream_reconnects)):
             try:
@@ -216,13 +230,16 @@ class PileLoader:
                 )
                 ds = ds.shuffle(seed=seed, buffer_size=buf)
                 for row in ds:
+                    stream_pos = self._counter
+                    self._counter += 1
+                    if num_shards > 1 and (stream_pos % num_shards) != shard_index:
+                        continue
                     text = row.get(self.text_field)
                     if not text:
                         continue
                     meta = _parse_meta(row.get(self.meta_field))
                     subset = _subset_name(meta)
-                    cid = f"hf_{self._counter}"
-                    self._counter += 1
+                    cid = f"hf_s{shard_index}_{stream_pos}" if num_shards > 1 else f"hf_{stream_pos}"
                     coarse = map_to_coarse_domain(subset, self.subset_map, self.default_coarse_domain)
                     yield PileDocument(
                         text=str(text),

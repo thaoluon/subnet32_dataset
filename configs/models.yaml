@@ -12,6 +12,11 @@
 # entirely (Ollama-only).
 
 ollama_base_url: "http://127.0.0.1:11434"
+# Multi-GPU: run one Ollama per GPU (different OLLAMA_HOST ports), pull the same tags on each, then list URLs here.
+# Requests round-robin across hosts. Example for 2× RTX 5090:
+# ollama_base_urls:
+#   - http://127.0.0.1:11434
+#   - http://127.0.0.1:11435
 
 openai:
   base_url: "https://api.openai.com/v1"

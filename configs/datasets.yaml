@@ -1,6 +1,7 @@
 # HuggingFace streaming Pile (same family as validator PromptDataset in this repo)
 huggingface_dataset: "monology/pile-uncopyrighted"
 split: "train"
+# Larger buffer = better shuffle on multi-TB streams (uses RAM). Try 200000–500000 on 96GB+ hosts.
 shuffle_buffer_size: 100000
 text_field: "text"
 meta_field: "meta"
@@ -61,6 +62,11 @@ pile_subset_to_domain:
 
 random_seed: 42
 default_coarse_domain: web
+
+# Multi-process Pile streaming: run N workers with the same random_seed and distinct stream_shard_index
+# in [0, N), stream_num_shards: N — each worker skips rows so partitions are disjoint (merge JSONL after).
+stream_num_shards: 1
+stream_shard_index: 0
 
 # JSONL layout: mixed = train.jsonl contains both labels; by_label = human/train.jsonl + ai/train.jsonl
 # (easier for 3M human + 3M AI pipelines). Override with CLI: --output-layout by_label
