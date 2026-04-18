@@ -8,6 +8,16 @@
 #
 # Auth: export OPENAI_API_KEY (or set api_key_env below to a different variable name).
 #
+# Azure OpenAI (same `provider: openai` rows): set use_azure + api_key_env, then env:
+#   AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME,
+#   AZURE_OPENAI_API_VERSION (optional; defaults to 2024-12-01-preview in code).
+# Or set openai.azure_endpoint / azure_deployment / azure_api_version in YAML.
+# Use the deployment name as each generator `model:` so JSONL metadata matches the deployment.
+# Example:
+# openai:
+#   use_azure: true
+#   api_key_env: AZURE_OPENAI_API_KEY
+#
 # Legacy keys `train_models` / `stress_models` still work if you remove `train_generators`
 # entirely (Ollama-only).
 

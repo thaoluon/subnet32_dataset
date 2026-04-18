@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ai_generator import assert_all_ollama_reachable
-from .openai_generator import OpenAINotConfiguredError
+from .openai_generator import OpenAINotConfiguredError, is_openai_credential_ready
 
 logger = logging.getLogger(__name__)
 
@@ -120,11 +120,12 @@ def strip_openai_if_key_missing(
     oa = dict(model_cfg.get("openai") or {})
     if not oa.get("omit_if_no_api_key"):
         return train_pool, stress_pool
-    env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
-    if (os.environ.get(env_name) or "").strip():
+    if is_openai_credential_ready(oa):
         return train_pool, stress_pool
+    env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
     logger.warning(
-        "%s is unset; removing openai generators because openai.omit_if_no_api_key is true",
+        "OpenAI/Azure credentials incomplete (%s or Azure endpoint/deployment); "
+        "removing openai generators because openai.omit_if_no_api_key is true",
         env_name,
     )
     return (
@@ -150,8 +151,15 @@ def assert_generators_configured(
         assert_all_ollama_reachable(ollama_base_urls, timeout_sec=health_timeout)
     if "openai" in prov:
         oa = dict(model_cfg.get("openai") or {})
-        env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
-        if not (os.environ.get(env_name) or "").strip():
+        if not is_openai_credential_ready(oa):
+            env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
+            if oa.get("use_azure"):
+                raise OpenAINotConfiguredError(
+                    f"Azure OpenAI not fully configured ({env_name}, AZURE_OPENAI_ENDPOINT, "
+                    f"AZURE_OPENAI_DEPLOYMENT_NAME, and optionally AZURE_OPENAI_API_VERSION) "
+                    f"but configs/models.yaml includes openai generators. "
+                    f"Set env vars / openai.azure_* keys, remove openai rows, or use --skip-ai."
+                )
             raise OpenAINotConfiguredError(
                 f"{env_name} is not set but configs/models.yaml includes openai generators. "
                 f"Export your API key, remove openai rows, or use --skip-ai."

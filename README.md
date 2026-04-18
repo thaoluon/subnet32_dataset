@@ -65,7 +65,7 @@ Optional for big RAM hosts: raise **`shuffle_buffer_size`** (e.g. `250000`) for 
 ### Step 2 — Models and secrets
 
 1. **`configs/models.yaml`**: confirm **Ollama** and/or **OpenAI** `train_generators` / `stress_generators`. For **2× GPU**, uncomment **`ollama_base_urls`** with two ports (see `scripts/run_2x5090_throughput.ps1`).  
-2. **OpenAI**: `export OPENAI_API_KEY=...` (Linux/macOS) or `$env:OPENAI_API_KEY="..."` (Windows) if you use OpenAI rows.
+2. **OpenAI or Azure**: platform API — `export OPENAI_API_KEY=...` (or PowerShell `$env:OPENAI_API_KEY`). For **Azure OpenAI**, set **`openai.use_azure: true`**, **`api_key_env: AZURE_OPENAI_API_KEY`**, and the **`AZURE_OPENAI_*`** env vars (see [Azure OpenAI](#azure-openai) below).
 
 ### Step 3 — Run (single process, recommended first)
 
@@ -75,7 +75,7 @@ From **`subnet32_dataset/`** (so `configs/` loads correctly). With **`use_sample
 
 ```bash
 cd subnet32_dataset
-export OPENAI_API_KEY="your-key-here"   # omit if OpenAI-only rows removed / omit_if_no_api_key
+export OPENAI_API_KEY="your-key-here"   # or Azure: see openai.use_azure + AZURE_OPENAI_* env vars
 python -m src.dataset_builder \
   --num-pairs 1 \
   --output-dir ./out_mdok_3m_subnet32 \
@@ -86,7 +86,7 @@ python -m src.dataset_builder \
 
 ```powershell
 cd subnet32_dataset
-$env:OPENAI_API_KEY = "your-key-here"   # omit if not using OpenAI
+$env:OPENAI_API_KEY = "your-key-here"   # or Azure vars; omit if not using API models
 python -m src.dataset_builder `
   --num-pairs 1 `
   --output-dir .\out_mdok_3m_subnet32 `
@@ -146,10 +146,41 @@ python -m src.dataset_builder --config-dir path/to/subnet32_dataset/configs --ou
 
 See the **Production run (~3M for mdok / Subnet32)** section above. In short: set **`use_sample_quotas: true`**, keep **`sample_targets`**, run with **`--output-layout by_label`**; completion is when all buckets are full (or **`max_documents_scan`** stops the run).
 
-### OpenAI
+### OpenAI (platform API)
 
 - Set **`OPENAI_API_KEY`** (or the env name in `openai.api_key_env`).  
 - Optional: `openai.omit_if_no_api_key: true` drops OpenAI rows when the key is missing (Ollama-only dev runs).
+
+### `.env` file
+
+1. Copy **`env.example`** to **`.env`** in the project root (`subnet32_dataset/`).  
+2. Fill in secrets (never commit **`.env`**).  
+3. Install dependencies so **`python-dotenv`** is available; **`python -m src.dataset_builder`** loads **`.env`** on startup (existing OS env vars win).
+
+### Azure OpenAI
+
+Use the same **`provider: openai`** entries in **`configs/models.yaml`**, but enable Azure on the **`openai:`** block:
+
+```yaml
+openai:
+  use_azure: true
+  api_key_env: AZURE_OPENAI_API_KEY
+```
+
+Set environment variables (PowerShell examples):
+
+```powershell
+$env:AZURE_OPENAI_API_KEY = "..."           # never commit real keys
+$env:AZURE_OPENAI_ENDPOINT = "https://YOUR_RESOURCE.cognitiveservices.azure.com/"
+$env:AZURE_OPENAI_DEPLOYMENT_NAME = "gpt-5-mini"
+$env:AZURE_OPENAI_API_VERSION = "2024-12-01-preview"   # optional; same default in code if unset
+```
+
+Each **`model:`** under **`train_generators` / `stress_generators`** should match the **deployment name** you call (Azure selects the model from the deployment URL; the YAML `model` value is still used for JSONL metadata). If you only have one deployment, point every OpenAI row at that name.
+
+You can instead set **`openai.azure_endpoint`**, **`openai.azure_deployment`**, and **`openai.azure_api_version`** in YAML (prefer env vars for secrets).
+
+**Security:** if an API key was pasted into chat or committed to git, **rotate it** in Azure and use the new value only in your local environment.
 
 ### Ollama multi-GPU
 

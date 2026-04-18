@@ -880,6 +880,22 @@ def run_build(
     help="Keep existing split JSONLs, continue IDs, and skip rows whose original_text_hash already exists.",
 )
 @click.option("--verbose", is_flag=True)
+def _load_dotenv() -> None:
+    """Load ``.env`` from the package root if python-dotenv is installed."""
+    env_path = PACKAGE_ROOT / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "Found %s but python-dotenv is not installed; pip install python-dotenv",
+            env_path,
+        )
+        return
+    load_dotenv(env_path, override=False)
+
+
 def main(
     config_dir: Path | None,
     output_dir: Path | None,
@@ -895,6 +911,7 @@ def main(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    _load_dotenv()
     cfg_dir = config_dir or (PACKAGE_ROOT / "configs")
     out = output_dir or (PACKAGE_ROOT / "outputs")
     try:
