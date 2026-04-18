@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,16 @@ def set_global_seed(seed: int) -> None:
 
 def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def normalize_for_dedup(text: str) -> str:
+    """Lowercase + collapse whitespace — catches near-identical copies for dedup."""
+    t = (text or "").lower().strip()
+    return re.sub(r"\s+", " ", t)
+
+
+def normalized_text_hash(text: str) -> str:
+    return text_sha256(normalize_for_dedup(text))
 
 
 def word_count(text: str) -> int:

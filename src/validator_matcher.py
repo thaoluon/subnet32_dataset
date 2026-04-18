@@ -30,6 +30,9 @@ def summarize_jsonl(path: str | Path) -> dict[str, Any]:
     n_h = n_a = 0
     domains: Counter[str] = Counter()
     generators: Counter[str] = Counter()
+    gen_providers: Counter[str] = Counter()
+    sample_kinds: Counter[str] = Counter()
+    n_mixed = 0
 
     for row in _iter_jsonl(path):
         lab = row.get("label")
@@ -37,6 +40,12 @@ def summarize_jsonl(path: str | Path) -> dict[str, Any]:
         ft = row.get("final_text") or ""
         dom = row.get("domain") or "unknown"
         domains[dom] += 1
+        sk = row.get("sample_kind")
+        if not sk:
+            sk = "human" if lab == "human" else ("direct_ai" if lab == "ai" else str(lab or "unknown"))
+        sample_kinds[str(sk)] += 1
+        if sk == "mixed":
+            n_mixed += 1
         wc = row.get("num_words")
         if wc is None:
             wc = word_count(ft)
@@ -57,18 +66,24 @@ def summarize_jsonl(path: str | Path) -> dict[str, Any]:
             aug_a += has_aug
             gm = row.get("generator_model") or "unknown"
             generators[str(gm)] += 1
+            gp = row.get("generator_provider") or "unknown"
+            gen_providers[str(gp)] += 1
 
     def avg(xs: list[int]) -> float:
         return round(sum(xs) / len(xs), 3) if xs else 0.0
 
     total = n_h + n_a
+    kind_total = sum(sample_kinds.values()) or 1
     dom_total = sum(domains.values()) or 1
     gen_total = sum(generators.values()) or 1
+    prov_total = sum(gen_providers.values()) or 1
 
     return {
         "path": str(path),
         "num_human": n_h,
         "num_ai": n_a,
+        "num_mixed": n_mixed,
+        "sample_kind_share": {k: round(v / kind_total, 4) for k, v in sample_kinds.most_common()},
         "avg_words_human": avg(words_h),
         "avg_words_ai": avg(words_a),
         "avg_sentences_human": avg(sents_h),
@@ -77,7 +92,9 @@ def summarize_jsonl(path: str | Path) -> dict[str, Any]:
         "augmentation_rate_ai": round(aug_a / n_a, 4) if n_a else 0.0,
         "domains": {k: round(v / dom_total, 4) for k, v in domains.most_common()},
         "generators": {k: round(v / gen_total, 4) for k, v in generators.most_common()},
+        "generator_providers": {k: round(v / prov_total, 4) for k, v in gen_providers.most_common()},
         "label_balance_ai_share": round(n_a / total, 4) if total else 0.0,
+        "label_balance_mixed_share": round(n_mixed / total, 4) if total else 0.0,
     }
 
 

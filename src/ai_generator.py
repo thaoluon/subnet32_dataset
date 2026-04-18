@@ -104,6 +104,7 @@ class OllamaCompletionClient:
                 data = r.json()
                 text = (data.get("response") or "").strip()
                 meta = {
+                    "provider": "ollama",
                     "temperature": p["temperature"],
                     "top_p": p["top_p"],
                     "repeat_penalty": p["repeat_penalty"],

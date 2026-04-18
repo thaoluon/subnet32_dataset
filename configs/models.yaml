@@ -1,16 +1,77 @@
-# Ollama model tags — align with https://ollama.com/library (names change; verify with `ollama pull` / `ollama list`).
-# Train pool: mix of recent instruction models (~8–15 GB quantized each; mistral-small3.2 is ~15 GB).
-# Stress pool: held-out families vs train (different generators for the stress split).
+# Multi-provider generation: OpenAI (GPT family, including ChatGPT API models) + local Ollama.
+# For Subnet32-style robustness, keep multiple *families* in train_generators (e.g. Qwen + Llama + Mistral + one API model).
+# Weights are relative (normalized at runtime). Same-source pairing is enforced in code: the
+# human prefix from Pile is sent as the prompt; the model returns only the continuation.
+#
+# Model IDs: set `model` to whatever your OpenAI account supports (e.g. gpt-5, gpt-4.1, gpt-4o).
+# Verify current names in https://platform.openai.com/docs/models
+#
+# Auth: export OPENAI_API_KEY (or set api_key_env below to a different variable name).
+#
+# Legacy keys `train_models` / `stress_models` still work if you remove `train_generators`
+# entirely (Ollama-only).
+
 ollama_base_url: "http://127.0.0.1:11434"
 
+openai:
+  base_url: "https://api.openai.com/v1"
+  api_key_env: "OPENAI_API_KEY"
+  # If true and the API key env is empty, OpenAI rows are removed so Ollama-only runs work
+  # (no GPT-class data in that run — turn off for production mixes).
+  omit_if_no_api_key: false
+  # Optional: OpenAI-Organization header
+  # organization: "org_..."
+  request_timeout_sec: 240
+  max_retries: 5
+  # Merged into the JSON body for provider-specific flags when needed.
+  # extra_request_json: {}
+
+# Target mix (example): GPT-class ~30%, Llama ~20%, Qwen ~20%, Mistral ~15%, Gemma ~10%, extra ~5%
+train_generators:
+  - provider: openai
+    model: gpt-5
+    weight: 0.22
+  - provider: openai
+    model: gpt-4.1
+    weight: 0.10
+  - provider: ollama
+    model: "llama3.1:8b"
+    weight: 0.20
+  - provider: ollama
+    model: "qwen3:14b"
+    weight: 0.20
+  - provider: ollama
+    model: "mistral-small3.2:24b"
+    weight: 0.15
+  - provider: ollama
+    model: "gemma3:12b"
+    weight: 0.13
+
+# Optional: models used only for hard_ai paraphrase (defaults to train_generators if omitted)
+# hard_transform_generators:
+#   - provider: ollama
+#     model: "qwen3:14b"
+#     weight: 1.0
+
+stress_generators:
+  - provider: openai
+    model: gpt-4.1-mini
+    weight: 0.35
+  - provider: ollama
+    model: "deepseek-r1:8b"
+    weight: 0.35
+  - provider: ollama
+    model: "phi4:14b"
+    weight: 0.30
+
+# Used only when train_generators is absent (legacy Ollama-only mode)
 train_models:
-  - mistral-small3.2:24b   # Mistral Small 3.2 (Ollama “latest” line for this family)
-  - qwen3:14b              # Qwen3 dense (newer generation than qwen2.5)
-  - gemma3:12b             # Google Gemma 3 instruct
+  - mistral-small3.2:24b
+  - qwen3:14b
+  - gemma3:12b
 
 stress_models:
-  - deepseek-r1:8b         # Reasoning-style model, distinct from train mix
-  - phi4:14b               # Microsoft Phi-4
+  - deepseek-r1:8b
+  - phi4:14b
 
-# Used if train_models were empty; otherwise first model above is typical for debugging
 default_model: "qwen3:14b"

@@ -21,3 +21,52 @@ use_raw_completion_for_text_models: true
 
 # Preflight GET /api/tags before streaming Pile (fail fast if Ollama is down)
 ollama_health_timeout_sec: 5
+
+# --- Hard AI (paraphrase / rewrite of model text) ---
+# Random one is chosen per rewrite for diversity. If the list is empty, hard_transform_system is used.
+hard_transform_systems:
+  - name: paraphrase
+    system: >-
+      You rewrite the passage in fresh wording while preserving facts, tone, and register.
+      Output only the rewritten passage — no preamble or quotes.
+  - name: concise
+    system: >-
+      You produce a shorter, tighter version of the passage while keeping the same meaning.
+      Remove redundancy. Output only the rewritten passage — no preamble.
+  - name: formal
+    system: >-
+      You rewrite the passage in a slightly more formal, polished register suitable for an article.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+  - name: casual
+    system: >-
+      You rewrite the passage in a more conversational, natural tone while staying coherent.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+  - name: grammar_cleanup
+    system: >-
+      You lightly edit the passage for grammar, clarity, and flow without changing meaning or adding content.
+      Output only the edited passage — no preamble.
+  - name: humanize
+    system: >-
+      You rewrite so the passage reads like careful human editing: varied rhythm, less template-like phrasing.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+  - name: imperfect_edit
+    system: >-
+      You lightly edit the passage as a rushed human might: one or two awkward word choices, a slightly
+      uneven sentence, minor redundancy, but no gibberish. Keep overall meaning. Output only the edited passage — no preamble.
+  - name: sentence_reorder
+    system: >-
+      Reorder sentences and clauses where it still reads naturally — same facts and tone, different flow.
+      Do not add or remove major content. Output only the rewritten passage — no preamble.
+
+# Fallback single string if hard_transform_systems is missing or empty
+hard_transform_system: >-
+  You rewrite the passage in fresh wording while preserving facts, tone, and register.
+  Fix awkward phrasing if needed. Output only the rewritten passage — no preamble or quotes.
+hard_transform_temperature_range: [0.22, 0.62]
+hard_transform_top_p_range: [0.78, 1.0]
+hard_transform_max_tokens_min: 140
+hard_transform_max_tokens_max: 360
+
+# --- Mixed sample (human span + AI continuation in one document) ---
+mixed_paragraph_joiner: "\n\n"
+mixed_word_count_max: 520

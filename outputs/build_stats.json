@@ -1,103 +1,39 @@
 {
-  "num_pairs_target": 250,
-  "pairs_written": 250,
-  "documents_seen": 5127,
+  "num_pairs_target": 2,
+  "pairs_written": 2,
+  "documents_seen": 2,
   "outputs": {
     "train": {
-      "path": "C:\\Users\\admin\\Downloads\\subnet32_dataset\\outputs\\train.jsonl",
-      "num_human": 980,
-      "num_ai": 980,
-      "avg_words_human": 126.341,
-      "avg_words_ai": 147.253,
-      "avg_sentences_human": 5.943,
-      "avg_sentences_ai": 7.443,
-      "augmentation_rate_human": 0.7765,
-      "augmentation_rate_ai": 0.7888,
+      "path": "C:\\Users\\admin\\Downloads\\LLM_Detector\\subnet32_dataset\\outputs\\train.jsonl",
+      "num_human": 1,
+      "num_ai": 0,
+      "avg_words_human": 133.0,
+      "avg_words_ai": 0.0,
+      "avg_sentences_human": 6.0,
+      "avg_sentences_ai": 0.0,
+      "augmentation_rate_human": 1.0,
+      "augmentation_rate_ai": 0.0,
       "domains": {
-        "web": 0.7224,
-        "medical": 0.1184,
-        "legal": 0.1071,
-        "academic": 0.0347,
-        "code": 0.0163,
-        "books": 0.001
+        "web": 1.0
       },
-      "generators": {
-        "gemma3:12b": 0.5184,
-        "mistral-small3.2:24b": 0.4622,
-        "qwen3:14b": 0.0194
-      },
-      "label_balance_ai_share": 0.5
-    },
-    "val": {
-      "path": "C:\\Users\\admin\\Downloads\\subnet32_dataset\\outputs\\val.jsonl",
-      "num_human": 117,
-      "num_ai": 117,
-      "avg_words_human": 122.47,
-      "avg_words_ai": 143.316,
-      "avg_sentences_human": 5.957,
-      "avg_sentences_ai": 7.726,
-      "augmentation_rate_human": 0.8205,
-      "augmentation_rate_ai": 0.8376,
-      "domains": {
-        "web": 0.7692,
-        "medical": 0.0855,
-        "legal": 0.0855,
-        "academic": 0.0427,
-        "code": 0.0171
-      },
-      "generators": {
-        "gemma3:12b": 0.5897,
-        "mistral-small3.2:24b": 0.3846,
-        "qwen3:14b": 0.0256
-      },
-      "label_balance_ai_share": 0.5
-    },
-    "test": {
-      "path": "C:\\Users\\admin\\Downloads\\subnet32_dataset\\outputs\\test.jsonl",
-      "num_human": 113,
-      "num_ai": 113,
-      "avg_words_human": 128.858,
-      "avg_words_ai": 144.186,
-      "avg_sentences_human": 5.841,
-      "avg_sentences_ai": 7.212,
-      "augmentation_rate_human": 0.8053,
-      "augmentation_rate_ai": 0.7522,
-      "domains": {
-        "web": 0.7611,
-        "legal": 0.1416,
-        "medical": 0.0531,
-        "academic": 0.0354,
-        "code": 0.0088
-      },
-      "generators": {
-        "gemma3:12b": 0.5398,
-        "mistral-small3.2:24b": 0.4248,
-        "qwen3:14b": 0.0354
-      },
-      "label_balance_ai_share": 0.5
+      "generators": {},
+      "label_balance_ai_share": 0.0
     },
     "stress": {
-      "path": "C:\\Users\\admin\\Downloads\\subnet32_dataset\\outputs\\stress.jsonl",
-      "num_human": 56,
-      "num_ai": 56,
-      "avg_words_human": 132.911,
-      "avg_words_ai": 157.893,
-      "avg_sentences_human": 5.732,
-      "avg_sentences_ai": 7.393,
-      "augmentation_rate_human": 0.875,
-      "augmentation_rate_ai": 0.8571,
+      "path": "C:\\Users\\admin\\Downloads\\LLM_Detector\\subnet32_dataset\\outputs\\stress.jsonl",
+      "num_human": 1,
+      "num_ai": 0,
+      "avg_words_human": 109.0,
+      "avg_words_ai": 0.0,
+      "avg_sentences_human": 4.0,
+      "avg_sentences_ai": 0.0,
+      "augmentation_rate_human": 1.0,
+      "augmentation_rate_ai": 0.0,
       "domains": {
-        "web": 0.6786,
-        "medical": 0.1607,
-        "legal": 0.1071,
-        "code": 0.0357,
-        "academic": 0.0179
+        "medical": 1.0
       },
-      "generators": {
-        "phi4:14b": 0.9821,
-        "deepseek-r1:8b": 0.0179
-      },
-      "label_balance_ai_share": 0.5
+      "generators": {},
+      "label_balance_ai_share": 0.0
     }
   }
 }

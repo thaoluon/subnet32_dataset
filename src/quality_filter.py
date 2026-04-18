@@ -54,6 +54,7 @@ def passes_quality(
     *,
     is_ai: bool = False,
     prefix: str | None = None,
+    skip_prefix_overlap_check: bool = False,
 ) -> tuple[bool, str]:
     if isinstance(cfg, dict):
         qc = QualityConfig(
@@ -109,7 +110,7 @@ def passes_quality(
     if code_hits >= 3 and wc < 200:
         return False, "code_heavy"
 
-    if is_ai and prefix:
+    if is_ai and prefix and not skip_prefix_overlap_check:
         # High ratio → most tokens already appeared in prefix (weak continuation).
         if prefix_overlap_ratio(prefix, t) > 0.88:
             return False, "ai_too_similar_to_prefix"
