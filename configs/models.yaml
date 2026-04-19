@@ -1,108 +1,47 @@
-# Multi-provider generation: OpenAI (GPT family, including ChatGPT API models) + local Ollama.
-# For Subnet32-style robustness, keep multiple *families* in train_generators (e.g. Qwen + Llama + Mistral + one API model).
-# Weights are relative (normalized at runtime). Same-source pairing is enforced in code: the
-# human prefix from Pile is sent as the prompt; the model returns only the continuation.
+# Throughput-oriented env for 2x RTX 5090 + fast CPU + NVMe (Vast / runpod style hosts).
+# Linux: use scripts/run_2x5090_throughput.sh (start-ollama, run-dual-builders, etc.).
+# 1) Start TWO Ollama daemons (one GPU each), then 2) run one or two dataset_builder workers.
 #
-# Model IDs: set `model` to whatever your OpenAI account supports (e.g. gpt-5, gpt-4.1, gpt-4o).
-# Verify current names in https://platform.openai.com/docs/models
+# === Terminal A — GPU 0, port 11434 ===
+#   $env:CUDA_VISIBLE_DEVICES = "0"
+#   $env:OLLAMA_HOST = "127.0.0.1:11434"
+#   ollama serve
 #
-# Auth: export OPENAI_API_KEY (or set api_key_env below to a different variable name).
+# === Terminal B — GPU 1, port 11435 ===
+#   $env:CUDA_VISIBLE_DEVICES = "1"
+#   $env:OLLAMA_HOST = "127.0.0.1:11435"
+#   ollama serve
 #
-# Other cloud APIs (same ``provider: openai`` — OpenAI-compatible Chat Completions):
-# On each generator row you may set:
-#   openai_base_url: "https://api.deepseek.com/v1"
-#   openai_api_key_env: "DEEPSEEK_API_KEY"   # export the matching key
-# Shorthand (openai rows only): base_url, api_key_env at row level.
-# Examples: DeepSeek ``https://api.deepseek.com/v1`` + model ``deepseek-chat``;
-# Qwen (or other models) on aggregators: e.g. OpenRouter ``https://openrouter.ai/api/v1`` +
-# ``OPENROUTER_API_KEY``, or Together / Fireworks / DeepInfra — use that vendor's base URL and
-# chat model id from their catalog (not DashScope unless you explicitly choose Alibaba).
-# hosted Gemma is often the same pattern on OpenRouter or similar.
-# Confirm exact base paths and model strings in each vendor's current docs.
+# Pull the same model tags on BOTH (e.g. ollama pull qwen3:14b).
 #
-# Azure OpenAI (same `provider: openai` rows): set use_azure + api_key_env, then env:
-#   AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME,
-#   AZURE_OPENAI_API_VERSION (optional; defaults to 2024-12-01-preview in code).
-# Or set openai.azure_endpoint / azure_deployment / azure_api_version in YAML.
-# Use the deployment name as each generator `model:` so JSONL metadata matches the deployment.
-# Example:
-# openai:
-#   use_azure: true
-#   api_key_env: AZURE_OPENAI_API_KEY
+# === models.yaml ===
+# Uncomment and set:
+#   ollama_base_urls:
+#     - http://127.0.0.1:11434
+#     - http://127.0.0.1:11435
 #
-# Legacy keys `train_models` / `stress_models` still work if you remove `train_generators`
-# entirely (Ollama-only).
+# Optional Ollama server-side parallelism (set BEFORE each ollama serve; values depend on VRAM/model size):
+#   $env:OLLAMA_NUM_PARALLEL = "2"   # try 1–2 for 14B-class on 32GB; reduce if OOM
 
-# Dual-GPU: one ``ollama serve`` per GPU (see scripts/run_2x5090_throughput.sh). Round-robin per request.
-# Single-GPU dev: comment out the second URL or run only one server on 11434.
-ollama_base_urls:
-  - http://127.0.0.1:11434
-  - http://127.0.0.1:11435
+$ErrorActionPreference = "Stop"
+Write-Host "Setting process environment for dataset build (HF + Python threads)..."
 
-openai:
-  base_url: "https://api.openai.com/v1"
-  # Platform API: set OPENAI_API_KEY in .env (or api_key_env below). For Azure, use use_azure: true + AZURE_*.
-  use_azure: false
-  api_key_env: "OPENAI_API_KEY"
-  # If true and the API key env is empty, OpenAI rows are removed so Ollama-only runs work
-  # (no GPT-class data in that run — turn off for production mixes).
-  omit_if_no_api_key: false
-  # Set true only if your models reject custom temperature (some Azure / reasoning models).
-  force_default_sampling: false
-  # Optional: OpenAI-Organization header
-  # organization: "org_..."
-  request_timeout_sec: 240
-  # Chat completions retries (429 rate limits sleep using Retry-After or exponential backoff).
-  max_retries: 12
-  # retry_after_max_sec: 180   # max sleep per 429 (default in code)
-  # retry_backoff_base_sec: 2  # used when API sends no Retry-After
-  # Merged into the JSON body for provider-specific flags when needed.
-  # extra_request_json: {}
+# Faster Hub downloads when hf_transfer is installed: pip install huggingface_hub[hf_transfer]
+if (-not $env:HF_HUB_ENABLE_HF_TRANSFER) {
+    $env:HF_HUB_ENABLE_HF_TRANSFER = "1"
+}
 
-# Target mix (example): GPT-class ~30%, Llama ~20%, Qwen ~20%, Mistral ~15%, Gemma ~10%, extra ~5%
-# OpenAI rows: use platform model ids (see OpenAI docs); must exist on your account.
-train_generators:
-  - provider: openai
-    model: gpt-4.1
-    weight: 0.32
-  - provider: ollama
-    model: "llama3.1:8b"
-    weight: 0.20
-  - provider: ollama
-    model: "qwen3:14b"
-    weight: 0.20
-  - provider: ollama
-    model: "mistral-small3.2:24b"
-    weight: 0.15
-  - provider: ollama
-    model: "gemma3:12b"
-    weight: 0.13
+# Use several CPU threads for tokenization / data prep (tune 8–16 on 24c host)
+if (-not $env:TOKENIZERS_PARALLELISM) {
+    $env:TOKENIZERS_PARALLELISM = "true"
+}
 
-# Optional: models used only for hard_ai paraphrase (defaults to train_generators if omitted)
-# hard_transform_generators:
-#   - provider: ollama
-#     model: "qwen3:14b"
-#     weight: 1.0
-
-stress_generators:
-  - provider: openai
-    model: gpt-4.1-mini
-    weight: 0.35
-  - provider: ollama
-    model: "deepseek-r1:8b"
-    weight: 0.35
-  - provider: ollama
-    model: "phi4:14b"
-    weight: 0.30
-
-# Used only when train_generators is absent (legacy Ollama-only mode)
-train_models:
-  - mistral-small3.2:24b
-  - qwen3:14b
-  - gemma3:12b
-
-stress_models:
-  - deepseek-r1:8b
-  - phi4:14b
-
-default_model: "qwen3:14b"
+# Example: single process using round-robin across both Ollamas (configs must list ollama_base_urls)
+# cd subnet32_dataset
+# python -m src.dataset_builder --num-pairs 1000 --output-dir .\outputs --verbose
+#
+# Example: TWO parallel builders (merge JSONL with append + distinct output dirs, then combine):
+# Worker 0: set datasets.yaml stream_num_shards: 2, stream_shard_index: 0
+# Worker 1: set stream_shard_index: 1 (same seed), run second process with --output-dir .\out_shard1
+#
+Write-Host "Done. Start Ollama on two ports, update models.yaml ollama_base_urls, then run dataset_builder."
