@@ -52,7 +52,10 @@ openai:
   # Optional: OpenAI-Organization header
   # organization: "org_..."
   request_timeout_sec: 240
-  max_retries: 5
+  # Chat completions retries (429 rate limits sleep using Retry-After or exponential backoff).
+  max_retries: 12
+  # retry_after_max_sec: 180   # max sleep per 429 (default in code)
+  # retry_backoff_base_sec: 2  # used when API sends no Retry-After
   # Merged into the JSON body for provider-specific flags when needed.
   # extra_request_json: {}
 

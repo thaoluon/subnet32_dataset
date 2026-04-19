@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -45,6 +46,23 @@ def azure_chat_completions_url(openai_cfg: dict[str, Any]) -> str:
     return f"{endpoint}/openai/deployments/{dep_enc}/chat/completions?api-version={quote(ver, safe='')}"
 
 
+def _parse_retry_after_sec(response: requests.Response) -> float | None:
+    """Return seconds to wait from ``Retry-After`` (seconds or HTTP-date), or None if absent/invalid."""
+    ra = (response.headers.get("Retry-After") or "").strip()
+    if not ra:
+        return None
+    try:
+        return float(ra)
+    except ValueError:
+        try:
+            dt = parsedate_to_datetime(ra)
+            if dt is None:
+                return None
+            return max(0.0, dt.timestamp() - time.time())
+        except (TypeError, ValueError, OSError):
+            return None
+
+
 def is_openai_credential_ready(openai_cfg: dict[str, Any]) -> bool:
     """True if API key env is set and, for Azure mode, endpoint + deployment are available."""
     oa = dict(openai_cfg or {})
@@ -77,7 +95,7 @@ class OpenAIChatCompletionClient:
         self.timeout = float(
             openai_cfg.get("request_timeout_sec", gen_cfg.get("request_timeout_sec", 240))
         )
-        self.max_retries = int(openai_cfg.get("max_retries", 5))
+        self.max_retries = int(openai_cfg.get("max_retries", 12))
 
     def generate(
         self,
@@ -142,12 +160,33 @@ class OpenAIChatCompletionClient:
         last_err: Exception | None = None
         retried_token_param = False
         retried_sampling_defaults = False
+        cap = float(self.openai_cfg.get("retry_after_max_sec", 180))
+        base = float(self.openai_cfg.get("retry_backoff_base_sec", 2.0))
+
         for attempt in range(self.max_retries):
             try:
                 r = requests.post(url, headers=headers, json=body, timeout=self.timeout)
                 if r.status_code == 429:
-                    wait = float(self.openai_cfg.get("retry_backoff_base_sec", 2.0)) * (attempt + 1)
-                    logger.warning("OpenAI rate limited (429), retry in %ss", wait)
+                    parsed = _parse_retry_after_sec(r)
+                    if parsed is not None:
+                        wait = min(max(parsed, 1.0), cap)
+                    else:
+                        wait = min(base * (2 ** min(attempt, 10)), cap)
+                    try:
+                        err_body = str(r.json())[:400]
+                    except ValueError:
+                        err_body = (r.text or "")[:400]
+                    last_err = requests.HTTPError(
+                        f"429 Too Many Requests: {err_body or r.reason}",
+                        response=r,
+                    )
+                    logger.warning(
+                        "OpenAI rate limited (429), sleeping %.1fs then retry (%s/%s)%s",
+                        wait,
+                        attempt + 1,
+                        self.max_retries,
+                        f" (Retry-After header: {parsed}s)" if parsed is not None else "",
+                    )
                     time.sleep(wait)
                     continue
                 r.raise_for_status()
@@ -215,7 +254,10 @@ class OpenAIChatCompletionClient:
                 logger.warning("OpenAI request failed (%s), retry %s", e, attempt + 1)
                 time.sleep(1.5 * (attempt + 1))
 
-        raise RuntimeError(f"OpenAI generation failed after retries: {last_err}")
+        tail = repr(last_err) if last_err is not None else "no error captured (unexpected)"
+        raise RuntimeError(
+            f"OpenAI generation failed after {self.max_retries} attempts (often 429 rate limits): {tail}"
+        )
 
 
 class OpenAIRouter:
