@@ -8,6 +8,16 @@
 #
 # Auth: export OPENAI_API_KEY (or set api_key_env below to a different variable name).
 #
+# Other cloud APIs (same ``provider: openai`` — OpenAI-compatible Chat Completions):
+# On each generator row you may set:
+#   openai_base_url: "https://api.deepseek.com/v1"
+#   openai_api_key_env: "DEEPSEEK_API_KEY"   # export the matching key
+# Shorthand (openai rows only): base_url, api_key_env at row level.
+# Examples: DeepSeek ``https://api.deepseek.com/v1`` + model ``deepseek-chat``;
+# Qwen (DashScope compatible mode) ``https://dashscope.aliyuncs.com/compatible-mode/v1`` + DashScope model id;
+# hosted Gemma often via OpenRouter ``https://openrouter.ai/api/v1`` + ``OPENROUTER_API_KEY``.
+# Confirm exact base paths and model strings in each vendor's current docs.
+#
 # Azure OpenAI (same `provider: openai` rows): set use_azure + api_key_env, then env:
 #   AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME,
 #   AZURE_OPENAI_API_VERSION (optional; defaults to 2024-12-01-preview in code).

@@ -34,7 +34,7 @@ from .generator_pools import (
     strip_openai_if_key_missing,
 )
 from .llm_rewrite import llm_paraphrase
-from .openai_generator import OpenAIChatCompletionClient, OpenAINotConfiguredError
+from .openai_generator import OpenAINotConfiguredError, OpenAIRouter
 from .sample_quotas import (
     BUCKET_KEYS,
     load_counts_json,
@@ -282,37 +282,6 @@ def run_build(
     balancer = DomainBalancer(quotas)
     loader = PileLoader(ds_cfg)
 
-    used_providers = providers_used([train_pool, stress_pool]) if not skip_ai else set()
-    ollama_client = (
-        OllamaRoundRobinClient(ollama_urls, gen_cfg) if (not skip_ai and "ollama" in used_providers) else None
-    )
-    openai_cfg = dict(model_cfg.get("openai") or {})
-    openai_client = (
-        OpenAIChatCompletionClient(gen_cfg, openai_cfg)
-        if (not skip_ai and "openai" in used_providers)
-        else None
-    )
-    if not skip_ai:
-        assert_generators_configured(
-            skip_ai=False,
-            ollama_base_urls=ollama_urls,
-            model_cfg=model_cfg,
-            gen_cfg=gen_cfg,
-            train_pool=train_pool,
-            stress_pool=stress_pool,
-        )
-
-    if not skip_ai and "ollama" in used_providers:
-        if len(ollama_urls) < 2:
-            logger.warning(
-                "Only one Ollama HTTP host is configured (%s). For 2× GPU run "
-                "scripts/run_2x5090_throughput.sh start-ollama and scripts/run_mdok_3m_quota.sh "
-                "(forces OLLAMA_BASE_URLS to two ports).",
-                ollama_urls,
-            )
-        else:
-            logger.info("Ollama round-robin across %s hosts: %s", len(ollama_urls), ollama_urls)
-
     hard_transform_pool: list[GeneratorEntry] = []
     if quota_mode and not skip_ai:
         hard_transform_pool = resolve_hard_transform_pool(model_cfg)
@@ -329,6 +298,40 @@ def run_build(
         )
         if not hard_transform_pool:
             raise ValueError("hard_transform_pool empty after ai_phase filter; check models.yaml.")
+
+    pools_for_providers = [train_pool, stress_pool]
+    if hard_transform_pool:
+        pools_for_providers.append(hard_transform_pool)
+    used_providers = providers_used(pools_for_providers) if not skip_ai else set()
+    openai_cfg = dict(model_cfg.get("openai") or {})
+    if not skip_ai:
+        assert_generators_configured(
+            skip_ai=False,
+            ollama_base_urls=ollama_urls,
+            model_cfg=model_cfg,
+            gen_cfg=gen_cfg,
+            train_pool=train_pool,
+            stress_pool=stress_pool,
+            extra_pools=[hard_transform_pool] if hard_transform_pool else None,
+        )
+
+    ollama_client = (
+        OllamaRoundRobinClient(ollama_urls, gen_cfg) if (not skip_ai and "ollama" in used_providers) else None
+    )
+    openai_router = (
+        OpenAIRouter(gen_cfg, openai_cfg) if (not skip_ai and "openai" in used_providers) else None
+    )
+
+    if not skip_ai and "ollama" in used_providers:
+        if len(ollama_urls) < 2:
+            logger.warning(
+                "Only one Ollama HTTP host is configured (%s). For 2× GPU run "
+                "scripts/run_2x5090_throughput.sh start-ollama and scripts/run_mdok_3m_quota.sh "
+                "(forces OLLAMA_BASE_URLS to two ports).",
+                ollama_urls,
+            )
+        else:
+            logger.info("Ollama round-robin across %s hosts: %s", len(ollama_urls), ollama_urls)
 
     span_min = int(gen_cfg.get("sentence_span_min", 4))
     span_max = int(gen_cfg.get("sentence_span_max", 8))
@@ -410,9 +413,10 @@ def run_build(
                 system=sys_msg if not raw_mode else None,
             )
         if gen_entry.provider == "openai":
-            if openai_client is None:
-                raise RuntimeError("openai client missing")
-            return openai_client.generate(
+            if openai_router is None:
+                raise RuntimeError("openai router missing")
+            oa = openai_router.client_for_entry(gen_entry)
+            return oa.generate(
                 gen_entry.model,
                 prompt,
                 system=sys_msg or None,
@@ -494,7 +498,7 @@ def run_build(
                 pairs_done += 1
                 continue
 
-            assert ollama_client is not None or openai_client is not None
+            assert ollama_client is not None or openai_router is not None
             pool = stress_pool if (stress_mode and stress_pool) else train_pool
             gen_entry: GeneratorEntry = pick_generator_entry(pool)
             prefix, _pk = build_prefix_span(sents, pmin, pmax)
@@ -675,7 +679,7 @@ def run_build(
                     logger.info("quota %s docs_seen=%s", bucket_counts, docs_seen)
                 continue
 
-            assert ollama_client is not None or openai_client is not None
+            assert ollama_client is not None or openai_router is not None
             pool = stress_pool if (stress_mode and stress_pool) else train_pool
             prefix, _pk = build_prefix_span(sents, pmin, pmax)
             if not prefix.strip():
@@ -754,7 +758,7 @@ def run_build(
                         gen_entry=gen_hard,
                         system=None,
                         ollama_client=ollama_client,
-                        openai_client=openai_client,
+                        openai_router=openai_router,
                         gen_cfg=gen_cfg,
                         use_raw=use_raw,
                     )

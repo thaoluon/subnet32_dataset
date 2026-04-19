@@ -12,7 +12,7 @@ from .ai_generator import (
     trim_to_sentence_boundary,
 )
 from .generator_pools import GeneratorEntry
-from .openai_generator import OpenAIChatCompletionClient
+from .openai_generator import OpenAIRouter
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def llm_paraphrase(
     gen_entry: GeneratorEntry,
     system: str | None,
     ollama_client: OllamaCompletionClient | None,
-    openai_client: OpenAIChatCompletionClient | None,
+    openai_router: OpenAIRouter | None,
     gen_cfg: dict[str, Any],
     use_raw: bool,
 ) -> tuple[str, dict[str, Any]]:
@@ -101,9 +101,10 @@ def llm_paraphrase(
         )
         meta.update(gen_meta)
     elif gen_entry.provider == "openai":
-        if openai_client is None:
-            raise RuntimeError("openai client required for hard transform")
-        text, gen_meta = openai_client.generate(
+        if openai_router is None:
+            raise RuntimeError("openai router required for hard transform")
+        oa_client = openai_router.client_for_entry(gen_entry)
+        text, gen_meta = oa_client.generate(
             gen_entry.model,
             source_text.strip(),
             system=sys_prompt,

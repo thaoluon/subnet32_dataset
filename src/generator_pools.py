@@ -19,6 +19,9 @@ class GeneratorEntry:
     provider: str
     model: str
     weight: float = 1.0
+    # Optional OpenAI-compatible HTTP overrides (DeepSeek, DashScope, OpenRouter, …).
+    openai_base_url: str | None = None
+    openai_api_key_env: str | None = None
 
     def record_model_id(self) -> str:
         """Stable id for JSONL (model tag only; use generator_provider for backend)."""
@@ -42,7 +45,43 @@ def _parse_entry(raw: dict[str, Any]) -> GeneratorEntry:
     w = _as_float(raw.get("weight"), 1.0)
     if w < 0:
         raise ValueError(f"generator entry weight must be >= 0: {raw!r}")
-    return GeneratorEntry(provider=prov, model=model, weight=w)
+    obu = raw.get("openai_base_url")
+    if obu is None and prov == "openai":
+        obu = raw.get("base_url")
+    oae = raw.get("openai_api_key_env")
+    if oae is None and prov == "openai":
+        oae = raw.get("api_key_env")
+    openai_base_url = str(obu).strip() if obu is not None and str(obu).strip() else None
+    openai_api_key_env = str(oae).strip() if oae is not None and str(oae).strip() else None
+    if prov != "openai" and (openai_base_url or openai_api_key_env):
+        raise ValueError(
+            f"openai_base_url / openai_api_key_env are only valid for provider: openai, got {raw!r}"
+        )
+    return GeneratorEntry(
+        provider=prov,
+        model=model,
+        weight=w,
+        openai_base_url=openai_base_url,
+        openai_api_key_env=openai_api_key_env,
+    )
+
+
+def merge_openai_cfg_for_entry(global_openai_cfg: dict[str, Any], entry: GeneratorEntry) -> dict[str, Any]:
+    """
+    Merge ``models.yaml`` ``openai:`` block with per-row overrides.
+
+    Setting ``openai_base_url`` on a row forces non-Azure chat/completions for that row
+    (typical for DeepSeek, DashScope compatible-mode, OpenRouter, etc.).
+    """
+    o = dict(global_openai_cfg or {})
+    if entry.provider != "openai":
+        return o
+    if entry.openai_base_url:
+        o["base_url"] = str(entry.openai_base_url).strip().rstrip("/")
+        o["use_azure"] = False
+    if entry.openai_api_key_env:
+        o["api_key_env"] = str(entry.openai_api_key_env).strip()
+    return o
 
 
 def generators_from_yaml_list(items: list[Any] | None) -> list[GeneratorEntry]:
@@ -206,18 +245,23 @@ def strip_openai_if_key_missing(
     oa = dict(model_cfg.get("openai") or {})
     if not oa.get("omit_if_no_api_key"):
         return train_pool, stress_pool
-    if is_openai_credential_ready(oa):
+
+    def _keep_openai(e: GeneratorEntry) -> bool:
+        if e.provider != "openai":
+            return True
+        return is_openai_credential_ready(merge_openai_cfg_for_entry(oa, e))
+
+    tr = [e for e in train_pool if _keep_openai(e)]
+    st = [e for e in stress_pool if _keep_openai(e)]
+    if tr == train_pool and st == stress_pool:
         return train_pool, stress_pool
-    env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
+    dropped = len(train_pool) - len(tr) + len(stress_pool) - len(st)
     logger.warning(
-        "OpenAI/Azure credentials incomplete (%s or Azure endpoint/deployment); "
-        "removing openai generators because openai.omit_if_no_api_key is true",
-        env_name,
+        "Removing %s openai generator row(s) with missing credentials "
+        "(openai.omit_if_no_api_key is true; per-row openai_api_key_env is respected).",
+        dropped,
     )
-    return (
-        [e for e in train_pool if e.provider != "openai"],
-        [e for e in stress_pool if e.provider != "openai"],
-    )
+    return tr, st
 
 
 def assert_generators_configured(
@@ -228,28 +272,38 @@ def assert_generators_configured(
     gen_cfg: dict[str, Any],
     train_pool: list[GeneratorEntry],
     stress_pool: list[GeneratorEntry],
+    extra_pools: list[list[GeneratorEntry]] | None = None,
 ) -> None:
     if skip_ai:
         return
-    prov = providers_used([train_pool, stress_pool])
+    pools: list[list[GeneratorEntry]] = [train_pool, stress_pool]
+    if extra_pools:
+        pools.extend(p for p in extra_pools if p)
+    prov = providers_used(pools)
     health_timeout = float(gen_cfg.get("ollama_health_timeout_sec", 5))
     if "ollama" in prov:
         assert_all_ollama_reachable(ollama_base_urls, timeout_sec=health_timeout)
     if "openai" in prov:
-        oa = dict(model_cfg.get("openai") or {})
-        if not is_openai_credential_ready(oa):
-            env_name = str(oa.get("api_key_env") or "OPENAI_API_KEY")
-            if oa.get("use_azure"):
+        oa_global = dict(model_cfg.get("openai") or {})
+        for pool in pools:
+            for e in pool:
+                if e.provider != "openai":
+                    continue
+                merged = merge_openai_cfg_for_entry(oa_global, e)
+                if is_openai_credential_ready(merged):
+                    continue
+                env_name = str(merged.get("api_key_env") or "OPENAI_API_KEY")
+                if merged.get("use_azure"):
+                    raise OpenAINotConfiguredError(
+                        f"Azure OpenAI not fully configured for generator model={e.model!r} "
+                        f"({env_name}, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME, "
+                        f"and optionally AZURE_OPENAI_API_VERSION). "
+                        f"Set env vars / openai.azure_* keys, remove openai rows, or use --skip-ai."
+                    )
                 raise OpenAINotConfiguredError(
-                    f"Azure OpenAI not fully configured ({env_name}, AZURE_OPENAI_ENDPOINT, "
-                    f"AZURE_OPENAI_DEPLOYMENT_NAME, and optionally AZURE_OPENAI_API_VERSION) "
-                    f"but configs/models.yaml includes openai generators. "
-                    f"Set env vars / openai.azure_* keys, remove openai rows, or use --skip-ai."
+                    f"{env_name} is not set but configs/models.yaml includes an openai generator "
+                    f"(model={e.model!r}). Export the key, remove openai rows, or use --skip-ai."
                 )
-            raise OpenAINotConfiguredError(
-                f"{env_name} is not set but configs/models.yaml includes openai generators. "
-                f"Export your API key, remove openai rows, or use --skip-ai."
-            )
 
 
 __all__ = [
@@ -260,6 +314,7 @@ __all__ = [
     "generators_from_yaml_list",
     "legacy_stress_entries",
     "legacy_train_entries",
+    "merge_openai_cfg_for_entry",
     "pick_generator_entry",
     "providers_used",
     "resolve_stress_pool",

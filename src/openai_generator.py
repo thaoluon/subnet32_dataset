@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .generator_pools import GeneratorEntry
 from urllib.parse import quote
 
 import requests
@@ -215,9 +218,35 @@ class OpenAIChatCompletionClient:
         raise RuntimeError(f"OpenAI generation failed after retries: {last_err}")
 
 
+class OpenAIRouter:
+    """
+    One logical OpenAI Chat Completions integration per distinct (base_url, api_key_env, Azure flag).
+
+    ``train_generators`` rows can set ``openai_base_url`` / ``openai_api_key_env`` to hit
+    DeepSeek, DashScope compatible-mode, OpenRouter, etc., alongside the default ``openai:`` block.
+    """
+
+    def __init__(self, gen_cfg: dict[str, Any], global_openai_cfg: dict[str, Any]):
+        self.gen_cfg = gen_cfg
+        self.global_openai_cfg = dict(global_openai_cfg or {})
+        self._cache: dict[tuple[str, str, bool], OpenAIChatCompletionClient] = {}
+
+    def client_for_entry(self, entry: "GeneratorEntry") -> OpenAIChatCompletionClient:
+        from .generator_pools import merge_openai_cfg_for_entry
+
+        merged = merge_openai_cfg_for_entry(self.global_openai_cfg, entry)
+        base = str(merged.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+        envn = str(merged.get("api_key_env") or "OPENAI_API_KEY")
+        key = (base, envn, bool(merged.get("use_azure")))
+        if key not in self._cache:
+            self._cache[key] = OpenAIChatCompletionClient(self.gen_cfg, merged)
+        return self._cache[key]
+
+
 __all__ = [
     "OpenAIChatCompletionClient",
     "OpenAINotConfiguredError",
+    "OpenAIRouter",
     "azure_chat_completions_url",
     "is_openai_credential_ready",
 ]
