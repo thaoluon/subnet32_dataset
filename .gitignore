@@ -38,6 +38,9 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
+# Dataset builder runtime lock (one process per output dir)
+.dataset_builder.lock
+
 # Environment and secrets
 .env
 .env.*

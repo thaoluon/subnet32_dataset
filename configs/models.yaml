@@ -21,19 +21,22 @@
 # Legacy keys `train_models` / `stress_models` still work if you remove `train_generators`
 # entirely (Ollama-only).
 
-ollama_base_url: "http://127.0.0.1:11434"
-# Multi-GPU: run one Ollama per GPU (different OLLAMA_HOST ports), pull the same tags on each, then list URLs here.
-# Requests round-robin across hosts. Example for 2× RTX 5090:
-# ollama_base_urls:
-#   - http://127.0.0.1:11434
-#   - http://127.0.0.1:11435
+# Dual-GPU: one ``ollama serve`` per GPU (see scripts/run_2x5090_throughput.sh). Round-robin per request.
+# Single-GPU dev: comment out the second URL or run only one server on 11434.
+ollama_base_urls:
+  - http://127.0.0.1:11434
+  - http://127.0.0.1:11435
 
 openai:
   base_url: "https://api.openai.com/v1"
+  # Platform API: set OPENAI_API_KEY in .env (or api_key_env below). For Azure, use use_azure: true + AZURE_*.
+  use_azure: false
   api_key_env: "OPENAI_API_KEY"
   # If true and the API key env is empty, OpenAI rows are removed so Ollama-only runs work
   # (no GPT-class data in that run — turn off for production mixes).
   omit_if_no_api_key: false
+  # Set true only if your models reject custom temperature (some Azure / reasoning models).
+  force_default_sampling: false
   # Optional: OpenAI-Organization header
   # organization: "org_..."
   request_timeout_sec: 240
@@ -42,13 +45,11 @@ openai:
   # extra_request_json: {}
 
 # Target mix (example): GPT-class ~30%, Llama ~20%, Qwen ~20%, Mistral ~15%, Gemma ~10%, extra ~5%
+# OpenAI rows: use platform model ids (see OpenAI docs); must exist on your account.
 train_generators:
   - provider: openai
-    model: gpt-5
-    weight: 0.22
-  - provider: openai
     model: gpt-4.1
-    weight: 0.10
+    weight: 0.32
   - provider: ollama
     model: "llama3.1:8b"
     weight: 0.20

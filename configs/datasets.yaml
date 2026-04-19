@@ -2,7 +2,7 @@
 huggingface_dataset: "monology/pile-uncopyrighted"
 split: "train"
 # Larger buffer = better shuffle on multi-TB streams (uses RAM). Try 200000–500000 on 96GB+ hosts.
-shuffle_buffer_size: 100000
+shuffle_buffer_size: 200000
 text_field: "text"
 meta_field: "meta"
 
@@ -70,11 +70,11 @@ stream_shard_index: 0
 
 # JSONL layout: mixed = train.jsonl contains both labels; by_label = human/train.jsonl + ai/train.jsonl
 # (easier for 3M human + 3M AI pipelines). Override with CLI: --output-layout by_label
-output_layout: mixed
+output_layout: by_label
 
 # Quota mode: fill exact bucket counts (human / direct_ai / hard_ai / mixed). When true,
 # --num-pairs is ignored for stopping (use sample_targets sums). Requires AI providers.
-use_sample_quotas: false
+use_sample_quotas: true
 
 # Quota recipe (~3M total): close to 50% / 25% / 15% / 10% human / direct / hard / mixed for mdok-style
 # binary training (PAN-style human vs machine). JSONL uses label_int 0=human, 1=machine; mixed rows use

@@ -110,6 +110,92 @@ def providers_used(pools: list[list[GeneratorEntry]]) -> set[str]:
     return s
 
 
+def apply_ai_throughput_phase(
+    train_pool: list[GeneratorEntry],
+    stress_pool: list[GeneratorEntry],
+    *,
+    phase: str,
+    ollama_phase_model: str | None,
+) -> tuple[list[GeneratorEntry], list[GeneratorEntry]]:
+    """
+    Reduce provider mixing so Ollama keeps one model loaded (or skip Ollama entirely).
+
+    - ``all``: no change.
+    - ``openai_only``: only ``provider: openai`` rows (Ollama idle for this run).
+    - ``ollama_locked``: only ``provider: ollama`` rows whose ``model`` equals ``ollama_phase_model``.
+      If the tag exists in only one of train/stress, the other pool reuses those entries so both pools stay valid.
+    """
+    ph = (phase or "all").strip().lower()
+    if ph in ("all", "default", ""):
+        return train_pool, stress_pool
+    if ph == "openai_only":
+        tr = [e for e in train_pool if e.provider == "openai"]
+        st = [e for e in stress_pool if e.provider == "openai"]
+        if not tr or not st:
+            raise ValueError(
+                "ai_phase=openai_only needs at least one openai generator in both train_generators and "
+                f"stress_generators (got train_openai={len(tr)} stress_openai={len(st)})."
+            )
+        logger.info(
+            "ai_phase=openai_only: using %s train + %s stress OpenAI generators (Ollama unused this run).",
+            len(tr),
+            len(st),
+        )
+        return tr, st
+    if ph == "ollama_locked":
+        tag = (ollama_phase_model or "").strip()
+        if not tag:
+            raise ValueError("ai_phase=ollama_locked requires --ollama-phase-model (exact Ollama model tag).")
+        tr = [e for e in train_pool if e.provider == "ollama" and e.model == tag]
+        st = [e for e in stress_pool if e.provider == "ollama" and e.model == tag]
+        if not tr and not st:
+            avail = sorted({e.model for e in train_pool + stress_pool if e.provider == "ollama"})
+            raise ValueError(f"ollama_locked: no generator with model={tag!r}. Ollama tags in yaml: {avail}")
+        if not tr:
+            tr = list(st)
+        if not st:
+            st = list(tr)
+        logger.info(
+            "ai_phase=ollama_locked model=%s: %s train + %s stress Ollama generators (OpenAI unused this run).",
+            tag,
+            len(tr),
+            len(st),
+        )
+        return tr, st
+    raise ValueError(f"Unknown ai_phase={phase!r} (use all, openai_only, ollama_locked).")
+
+
+def filter_pool_for_ai_phase(
+    pool: list[GeneratorEntry],
+    *,
+    phase: str,
+    ollama_phase_model: str | None,
+    fallback: list[GeneratorEntry],
+) -> list[GeneratorEntry]:
+    """Filter an auxiliary pool (e.g. hard_transform) to match ``apply_ai_throughput_phase`` semantics."""
+    ph = (phase or "all").strip().lower()
+    if ph in ("all", "default", ""):
+        return pool
+    if ph == "openai_only":
+        out = [e for e in pool if e.provider == "openai"]
+        if out:
+            return out
+        out = [e for e in fallback if e.provider == "openai"]
+        if out:
+            return out
+        raise ValueError("openai_only: hard_transform_generators has no openai entries and train pool has none.")
+    if ph == "ollama_locked":
+        tag = (ollama_phase_model or "").strip()
+        out = [e for e in pool if e.provider == "ollama" and e.model == tag]
+        if out:
+            return out
+        out = [e for e in fallback if e.provider == "ollama" and e.model == tag]
+        if out:
+            return out
+        return [GeneratorEntry(provider="ollama", model=tag, weight=1.0)]
+    return pool
+
+
 def strip_openai_if_key_missing(
     model_cfg: dict[str, Any], train_pool: list[GeneratorEntry], stress_pool: list[GeneratorEntry]
 ) -> tuple[list[GeneratorEntry], list[GeneratorEntry]]:
@@ -168,7 +254,9 @@ def assert_generators_configured(
 
 __all__ = [
     "GeneratorEntry",
+    "apply_ai_throughput_phase",
     "assert_generators_configured",
+    "filter_pool_for_ai_phase",
     "generators_from_yaml_list",
     "legacy_stress_entries",
     "legacy_train_entries",

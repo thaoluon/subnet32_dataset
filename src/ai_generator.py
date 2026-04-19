@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import time
@@ -42,10 +43,31 @@ def assert_ollama_reachable(base_url: str, *, timeout_sec: float = 5.0) -> None:
         ) from e
 
 
-def resolve_ollama_base_urls(model_cfg: dict[str, Any], cli_override: str | None) -> list[str]:
-    """CLI --ollama-url wins; else ``ollama_base_urls`` list; else single ``ollama_base_url``."""
+def resolve_ollama_base_urls(
+    model_cfg: dict[str, Any],
+    cli_override: str | None,
+    cli_urls: list[str] | None = None,
+) -> list[str]:
+    """
+    Resolution order:
+
+    1. Non-empty ``cli_urls`` (from ``--ollama-urls`` comma list).
+    2. ``cli_override`` (``--ollama-url``).
+    3. ``OLLAMA_BASE_URLS`` env (comma-separated).
+    4. ``ollama_base_urls`` in ``models.yaml``.
+    5. Single ``ollama_base_url`` / default localhost.
+    """
+    if cli_urls:
+        urls = [str(u).strip().rstrip("/") for u in cli_urls if str(u).strip()]
+        if urls:
+            return urls
     if cli_override:
         return [str(cli_override).strip().rstrip("/")]
+    env_multi = (os.environ.get("OLLAMA_BASE_URLS") or "").strip()
+    if env_multi:
+        urls = [u.strip().rstrip("/") for u in env_multi.split(",") if u.strip()]
+        if urls:
+            return urls
     raw = model_cfg.get("ollama_base_urls")
     if isinstance(raw, list) and len(raw) > 0:
         urls = [str(u).strip().rstrip("/") for u in raw if str(u).strip()]

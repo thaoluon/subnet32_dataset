@@ -1,4 +1,5 @@
 # Throughput-oriented env for 2x RTX 5090 + fast CPU + NVMe (Vast / runpod style hosts).
+# Linux: use scripts/run_2x5090_throughput.sh (start-ollama, run-dual-builders, etc.).
 # 1) Start TWO Ollama daemons (one GPU each), then 2) run one or two dataset_builder workers.
 #
 # === Terminal A — GPU 0, port 11434 ===

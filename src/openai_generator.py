@@ -92,6 +92,10 @@ class OpenAIChatCompletionClient:
         temperature = float(p.get("temperature", 0.7))
         top_p = float(p.get("top_p", 0.95))
         max_tokens = int(p.get("num_predict") or self.gen_cfg.get("num_predict", 256))
+        # gpt-5 / o-series on Azure often reject any temperature except the default (1).
+        if bool(self.openai_cfg.get("force_default_sampling")):
+            temperature = 1.0
+            top_p = 1.0
 
         if self.use_azure:
             url = azure_chat_completions_url(self.openai_cfg)
@@ -134,6 +138,7 @@ class OpenAIChatCompletionClient:
 
         last_err: Exception | None = None
         retried_token_param = False
+        retried_sampling_defaults = False
         for attempt in range(self.max_retries):
             try:
                 r = requests.post(url, headers=headers, json=body, timeout=self.timeout)
@@ -171,19 +176,35 @@ class OpenAIChatCompletionClient:
                         detail = str(e.response.json())[:400]
                     except ValueError:
                         detail = (e.response.text or "")[:400]
+                err_txt = (detail + str(e)).lower()
                 # Some models reject max_tokens; retry once with max_completion_tokens
                 if (
                     not retried_token_param
                     and e.response is not None
                     and e.response.status_code == 400
                 ):
-                    err_txt = (detail + str(e)).lower()
                     if "max_tokens" in err_txt and "max_completion_tokens" in err_txt:
                         body.pop("max_tokens", None)
                         body["max_completion_tokens"] = max_tokens
                         retried_token_param = True
                         logger.info("OpenAI rejected max_tokens; retrying with max_completion_tokens")
                         continue
+                if (
+                    not retried_sampling_defaults
+                    and e.response is not None
+                    and e.response.status_code == 400
+                    and "temperature" in err_txt
+                    and ("unsupported" in err_txt or "default" in err_txt)
+                ):
+                    body["temperature"] = 1.0
+                    body["top_p"] = 1.0
+                    temperature = 1.0
+                    top_p = 1.0
+                    retried_sampling_defaults = True
+                    logger.info(
+                        "OpenAI rejected non-default sampling; retrying with temperature=1, top_p=1"
+                    )
+                    continue
                 logger.warning("OpenAI HTTP error (%s), retry %s: %s", e, attempt + 1, detail)
                 time.sleep(1.5 * (attempt + 1))
             except Exception as e:

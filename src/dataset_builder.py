@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import random
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import click
 
@@ -22,7 +24,9 @@ from .ai_generator import (
 )
 from .generator_pools import (
     GeneratorEntry,
+    apply_ai_throughput_phase,
     assert_generators_configured,
+    filter_pool_for_ai_phase,
     pick_generator_entry,
     providers_used,
     resolve_stress_pool,
@@ -54,6 +58,57 @@ from .validator_matcher import summarize_jsonl
 
 logger = logging.getLogger(__name__)
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+
+
+class OutputDirectoryLockedError(RuntimeError):
+    """Raised when a second ``dataset_builder`` tries to use the same ``--output-dir``."""
+
+
+@contextlib.contextmanager
+def exclusive_output_dir_lock(output_dir: Path) -> Iterator[None]:
+    """
+    Ensure only one ``dataset_builder`` process writes to ``output_dir`` at a time.
+
+    Two parallel runs corrupt ``sample_counts.json``, duplicate IDs, and interleave JSONL.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = output_dir / ".dataset_builder.lock"
+    if os.name != "posix":
+        logger.warning(
+            "Output directory lock skipped on non-POSIX OS; do not run two builders on the same %s",
+            output_dir,
+        )
+        yield
+        return
+
+    import fcntl
+
+    fp = open(lock_path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fp.close()
+        try:
+            hint = lock_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            hint = ""
+        raise OutputDirectoryLockedError(
+            f"Another dataset_builder is already writing to {output_dir} "
+            f"(lock file {lock_path}, holder pid {hint or 'unknown'}). "
+            "Stop the other process or use a different --output-dir / OUT_DIR."
+        ) from None
+    fp.seek(0)
+    fp.truncate()
+    fp.write(str(os.getpid()))
+    fp.flush()
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        fp.close()
 
 _ID_RE = re.compile(r"^s32_([a-z]+)_(\d+)$")
 
@@ -179,8 +234,19 @@ def run_build(
     ollama_url: str | None,
     append: bool,
     output_layout: str | None = None,
+    *,
+    ollama_urls_cli: list[str] | None = None,
+    stream_num_shards: int | None = None,
+    stream_shard_index: int | None = None,
+    ai_phase: str = "all",
+    ollama_phase_model: str | None = None,
 ) -> None:
     ds_cfg = load_yaml(config_dir / "datasets.yaml")
+    if (stream_num_shards is not None) ^ (stream_shard_index is not None):
+        raise ValueError("Set both --stream-num-shards and --stream-shard-index, or neither.")
+    if stream_num_shards is not None and stream_shard_index is not None:
+        ds_cfg["stream_num_shards"] = int(stream_num_shards)
+        ds_cfg["stream_shard_index"] = int(stream_shard_index)
     targets = parse_sample_targets(ds_cfg)
     quota_mode = targets is not None
     if quota_mode and skip_ai:
@@ -196,10 +262,16 @@ def run_build(
     seed = int(ds_cfg.get("random_seed", 42))
     set_global_seed(seed)
 
-    ollama_urls = resolve_ollama_base_urls(model_cfg, ollama_url)
+    ollama_urls = resolve_ollama_base_urls(model_cfg, ollama_url, ollama_urls_cli)
     train_pool = resolve_train_pool(model_cfg)
     stress_pool = resolve_stress_pool(model_cfg)
     train_pool, stress_pool = strip_openai_if_key_missing(model_cfg, train_pool, stress_pool)
+    train_pool, stress_pool = apply_ai_throughput_phase(
+        train_pool,
+        stress_pool,
+        phase=ai_phase,
+        ollama_phase_model=ollama_phase_model,
+    )
     if not skip_ai and not train_pool:
         raise ValueError(
             "configs/models.yaml: no train generators (train_generators or train_models / default_model). "
@@ -230,6 +302,17 @@ def run_build(
             stress_pool=stress_pool,
         )
 
+    if not skip_ai and "ollama" in used_providers:
+        if len(ollama_urls) < 2:
+            logger.warning(
+                "Only one Ollama HTTP host is configured (%s). For 2× GPU run "
+                "scripts/run_2x5090_throughput.sh start-ollama and scripts/run_mdok_3m_quota.sh "
+                "(forces OLLAMA_BASE_URLS to two ports).",
+                ollama_urls,
+            )
+        else:
+            logger.info("Ollama round-robin across %s hosts: %s", len(ollama_urls), ollama_urls)
+
     hard_transform_pool: list[GeneratorEntry] = []
     if quota_mode and not skip_ai:
         hard_transform_pool = resolve_hard_transform_pool(model_cfg)
@@ -238,6 +321,14 @@ def run_build(
                 "Quota mode requires at least one LLM for hard_ai paraphrase. "
                 "Configure train_generators or hard_transform_generators in models.yaml."
             )
+        hard_transform_pool = filter_pool_for_ai_phase(
+            hard_transform_pool,
+            phase=ai_phase,
+            ollama_phase_model=ollama_phase_model,
+            fallback=train_pool,
+        )
+        if not hard_transform_pool:
+            raise ValueError("hard_transform_pool empty after ai_phase filter; check models.yaml.")
 
     span_min = int(gen_cfg.get("sentence_span_min", 4))
     span_max = int(gen_cfg.get("sentence_span_max", 8))
@@ -840,6 +931,22 @@ def run_build(
     )
 
 
+def _load_dotenv() -> None:
+    """Load ``.env`` from the package root if python-dotenv is installed."""
+    env_path = PACKAGE_ROOT / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "Found %s but python-dotenv is not installed; pip install python-dotenv",
+            env_path,
+        )
+        return
+    load_dotenv(env_path, override=False)
+
+
 @click.command()
 @click.option(
     "--config-dir",
@@ -873,38 +980,59 @@ def run_build(
     "by_label: human/{split}.jsonl and ai/{split}.jsonl (clear 3M+3M file layout). "
     "Default: datasets.yaml output_layout or mixed.",
 )
-@click.option("--ollama-url", type=str, default=None, help="Override Ollama base URL")
+@click.option("--ollama-url", type=str, default=None, help="Override Ollama base URL (single host)")
+@click.option(
+    "--ollama-urls",
+    type=str,
+    default=None,
+    help="Comma-separated Ollama base URLs for round-robin (e.g. two GPUs on :11434,:11435). "
+    "Wins over --ollama-url and models.yaml. Same as env OLLAMA_BASE_URLS.",
+)
+@click.option(
+    "--stream-num-shards",
+    type=int,
+    default=None,
+    help="Override datasets.yaml stream_num_shards (use with --stream-shard-index for parallel workers).",
+)
+@click.option(
+    "--stream-shard-index",
+    type=int,
+    default=None,
+    help="Override datasets.yaml stream_shard_index in [0, stream_num_shards).",
+)
+@click.option(
+    "--ai-phase",
+    type=click.Choice(["all", "openai_only", "ollama_locked"], case_sensitive=False),
+    default="all",
+    help="Throughput: openai_only = only API generators (Ollama idle). ollama_locked = one Ollama tag "
+    "(--ollama-phase-model); avoids swapping Ollama weights each request.",
+)
+@click.option(
+    "--ollama-phase-model",
+    type=str,
+    default=None,
+    help="Exact Ollama model name when --ai-phase=ollama_locked (e.g. qwen3:14b).",
+)
 @click.option(
     "--append",
     is_flag=True,
     help="Keep existing split JSONLs, continue IDs, and skip rows whose original_text_hash already exists.",
 )
 @click.option("--verbose", is_flag=True)
-def _load_dotenv() -> None:
-    """Load ``.env`` from the package root if python-dotenv is installed."""
-    env_path = PACKAGE_ROOT / ".env"
-    if not env_path.is_file():
-        return
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        logging.getLogger(__name__).warning(
-            "Found %s but python-dotenv is not installed; pip install python-dotenv",
-            env_path,
-        )
-        return
-    load_dotenv(env_path, override=False)
-
-
 def main(
     config_dir: Path | None,
     output_dir: Path | None,
     num_pairs: int,
     stress_fraction: float,
     skip_ai: bool,
-    ollama_url: str | None,
-    append: bool,
     output_layout: str | None,
+    ollama_url: str | None,
+    ollama_urls: str | None,
+    stream_num_shards: int | None,
+    stream_shard_index: int | None,
+    ai_phase: str,
+    ollama_phase_model: str | None,
+    append: bool,
     verbose: bool,
 ) -> None:
     logging.basicConfig(
@@ -914,8 +1042,31 @@ def main(
     _load_dotenv()
     cfg_dir = config_dir or (PACKAGE_ROOT / "configs")
     out = output_dir or (PACKAGE_ROOT / "outputs")
+    out.mkdir(parents=True, exist_ok=True)
+    ollama_urls_cli: list[str] | None = None
+    if ollama_urls:
+        ollama_urls_cli = [u.strip().rstrip("/") for u in ollama_urls.split(",") if u.strip()]
+        if not ollama_urls_cli:
+            ollama_urls_cli = None
     try:
-        run_build(cfg_dir, out, num_pairs, stress_fraction, skip_ai, ollama_url, append, output_layout)
+        with exclusive_output_dir_lock(out):
+            run_build(
+                cfg_dir,
+                out,
+                num_pairs,
+                stress_fraction,
+                skip_ai,
+                ollama_url,
+                append,
+                output_layout,
+                ollama_urls_cli=ollama_urls_cli,
+                stream_num_shards=stream_num_shards,
+                stream_shard_index=stream_shard_index,
+                ai_phase=ai_phase,
+                ollama_phase_model=ollama_phase_model,
+            )
+    except OutputDirectoryLockedError as e:
+        raise click.ClickException(str(e)) from e
     except OllamaUnreachableError as e:
         raise click.ClickException(str(e)) from e
     except OpenAINotConfiguredError as e:
