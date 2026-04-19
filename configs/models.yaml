@@ -14,8 +14,10 @@
 #   openai_api_key_env: "DEEPSEEK_API_KEY"   # export the matching key
 # Shorthand (openai rows only): base_url, api_key_env at row level.
 # Examples: DeepSeek ``https://api.deepseek.com/v1`` + model ``deepseek-chat``;
-# Qwen (DashScope compatible mode) ``https://dashscope.aliyuncs.com/compatible-mode/v1`` + DashScope model id;
-# hosted Gemma often via OpenRouter ``https://openrouter.ai/api/v1`` + ``OPENROUTER_API_KEY``.
+# Qwen (or other models) on aggregators: e.g. OpenRouter ``https://openrouter.ai/api/v1`` +
+# ``OPENROUTER_API_KEY``, or Together / Fireworks / DeepInfra — use that vendor's base URL and
+# chat model id from their catalog (not DashScope unless you explicitly choose Alibaba).
+# hosted Gemma is often the same pattern on OpenRouter or similar.
 # Confirm exact base paths and model strings in each vendor's current docs.
 #
 # Azure OpenAI (same `provider: openai` rows): set use_azure + api_key_env, then env:
