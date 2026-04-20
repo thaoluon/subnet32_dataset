@@ -15,6 +15,12 @@ class QualityConfig:
     min_sentences: int = 3
     max_non_alnum_ratio: float = 0.18
     max_line_repetition: float = 0.35
+    # Reject AI text when almost every token appeared in the prefix (continuation too thin).
+    ai_prefix_overlap_max: float = 0.88
+    # Lines starting like list items; ratio above this → reject (0–1).
+    list_heavy_max_ratio: float = 0.4
+    # Reject short snippets with many code-like tokens; 0 disables this check.
+    code_heavy_word_threshold: int = 200
 
 
 _ASSISTANT_START = re.compile(
@@ -63,6 +69,9 @@ def passes_quality(
             min_sentences=int(cfg.get("min_sentences", 3)),
             max_non_alnum_ratio=float(cfg.get("max_non_alnum_ratio", 0.18)),
             max_line_repetition=float(cfg.get("max_line_repetition", 0.35)),
+            ai_prefix_overlap_max=float(cfg.get("ai_prefix_overlap_max", 0.88)),
+            list_heavy_max_ratio=float(cfg.get("list_heavy_max_ratio", 0.4)),
+            code_heavy_word_threshold=int(cfg.get("code_heavy_word_threshold", 200)),
         )
     else:
         qc = cfg
@@ -89,7 +98,7 @@ def passes_quality(
     lines = [ln.strip() for ln in t.split("\n") if ln.strip()]
     if len(lines) > 5:
         bulletish = sum(1 for ln in lines if ln.startswith(("-", "*", "•", "1.", "2.", "3.")))
-        if bulletish / len(lines) > 0.4:
+        if bulletish / len(lines) > qc.list_heavy_max_ratio:
             return False, "list_heavy"
 
     first_line = lines[0] if lines else t[:120]
@@ -107,12 +116,13 @@ def passes_quality(
             "package ",
         )
     )
-    if code_hits >= 3 and wc < 200:
+    thr_code = qc.code_heavy_word_threshold
+    if thr_code > 0 and code_hits >= 3 and wc < thr_code:
         return False, "code_heavy"
 
     if is_ai and prefix and not skip_prefix_overlap_check:
         # High ratio → most tokens already appeared in prefix (weak continuation).
-        if prefix_overlap_ratio(prefix, t) > 0.88:
+        if prefix_overlap_ratio(prefix, t) > qc.ai_prefix_overlap_max:
             return False, "ai_too_similar_to_prefix"
 
     return True, "ok"

@@ -1,5 +1,17 @@
-word_count_min: 80
-word_count_max: 300
+# --- Yield vs strictness (mdok / API $) ---
+# Tight word_count + overlap rules drop many otherwise fine completions. If paid API rows are
+# sparse, lower word_count_min and raise ai_prefix_overlap_max first; then widen max_tokens_range.
+word_count_min: 48
+word_count_max: 420
+min_sentences: 2
+max_non_alnum_ratio: 0.30
+max_line_repetition: 0.52
+# Continuations often reuse topic words from the prefix; 0.88 rejected a lot of valid GPT text.
+ai_prefix_overlap_max: 0.94
+list_heavy_max_ratio: 0.65
+# 0 = do not reject short "code-like" snippets (Pile code domains).
+code_heavy_word_threshold: 0
+
 sentence_span_min: 4
 sentence_span_max: 8
 prefix_sentence_min: 2
@@ -7,7 +19,8 @@ prefix_sentence_max: 4
 
 temperature_range: [0.3, 1.2]
 top_p_range: [0.7, 1.0]
-max_tokens_range: [80, 220]
+# Wider cap → longer completions → easier to pass word_count_min after augment.
+max_tokens_range: [96, 280]
 repeat_penalty_range: [1.0, 1.2]
 
 # Ollama num_predict (max tokens to generate)
@@ -67,9 +80,9 @@ hard_transform_system: >-
   Fix awkward phrasing if needed. Output only the rewritten passage — no preamble or quotes.
 hard_transform_temperature_range: [0.22, 0.62]
 hard_transform_top_p_range: [0.78, 1.0]
-hard_transform_max_tokens_min: 140
-hard_transform_max_tokens_max: 360
+hard_transform_max_tokens_min: 110
+hard_transform_max_tokens_max: 400
 
 # --- Mixed sample (human span + AI continuation in one document) ---
 mixed_paragraph_joiner: "\n\n"
-mixed_word_count_max: 520
+mixed_word_count_max: 620

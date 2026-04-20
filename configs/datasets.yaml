@@ -74,7 +74,9 @@ output_layout: by_label
 
 # Quota mode: fill exact bucket counts (human / direct_ai / hard_ai / mixed). When true,
 # --num-pairs is ignored for stopping (use sample_targets sums). Requires AI providers.
-use_sample_quotas: true
+# Dev / “fill AI fast”: false → pair mode; each kept doc writes human + one AI continuation until
+# --num-pairs matched pairs. Set true again for the ~3M mdok quota recipe below.
+use_sample_quotas: false
 
 # Quota recipe (~3M total): close to 50% / 25% / 15% / 10% human / direct / hard / mixed for mdok-style
 # binary training (PAN-style human vs machine). JSONL uses label_int 0=human, 1=machine; mixed rows use

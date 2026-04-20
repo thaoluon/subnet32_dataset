@@ -216,12 +216,16 @@ class DomainBalancer:
 
 
 def _quality_dict(gen_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Maps generation.yaml → passes_quality; see quality_filter.QualityConfig for defaults."""
     return {
         "word_count_min": int(gen_cfg.get("word_count_min", 80)),
         "word_count_max": int(gen_cfg.get("word_count_max", 300)),
-        "min_sentences": 3,
-        "max_non_alnum_ratio": 0.18,
-        "max_line_repetition": 0.35,
+        "min_sentences": int(gen_cfg.get("min_sentences", 3)),
+        "max_non_alnum_ratio": float(gen_cfg.get("max_non_alnum_ratio", 0.18)),
+        "max_line_repetition": float(gen_cfg.get("max_line_repetition", 0.35)),
+        "ai_prefix_overlap_max": float(gen_cfg.get("ai_prefix_overlap_max", 0.88)),
+        "list_heavy_max_ratio": float(gen_cfg.get("list_heavy_max_ratio", 0.4)),
+        "code_heavy_word_threshold": int(gen_cfg.get("code_heavy_word_threshold", 200)),
     }
 
 
