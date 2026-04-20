@@ -1,8 +1,8 @@
 {
-  "human": 1324,
-  "direct_ai": 111,
+  "human": 1405,
+  "direct_ai": 122,
   "hard_ai": 5,
-  "mixed": 60,
+  "mixed": 68,
   "targets": {
     "human": 1500000,
     "direct_ai": 700000,

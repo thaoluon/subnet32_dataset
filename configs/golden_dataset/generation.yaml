@@ -1,0 +1,64 @@
+# Golden preset: stricter than “max yield”, still practical for Pile continuations.
+word_count_min: 55
+word_count_max: 400
+min_sentences: 2
+max_non_alnum_ratio: 0.26
+max_line_repetition: 0.45
+ai_prefix_overlap_max: 0.91
+list_heavy_max_ratio: 0.55
+code_heavy_word_threshold: 0
+
+sentence_span_min: 4
+sentence_span_max: 8
+prefix_sentence_min: 2
+prefix_sentence_max: 4
+
+temperature_range: [0.35, 1.05]
+top_p_range: [0.75, 1.0]
+max_tokens_range: [110, 260]
+repeat_penalty_range: [1.0, 1.15]
+
+num_predict: 512
+
+continuation_system: "You are a text completion model. Continue the user's text naturally in the same style. Output only the continuation, no preamble or labels."
+
+use_raw_completion_for_text_models: true
+ollama_health_timeout_sec: 5
+request_timeout_sec: 480
+
+hard_transform_systems:
+  - name: paraphrase
+    system: >-
+      You rewrite the passage in fresh wording while preserving facts, tone, and register.
+      Output only the rewritten passage — no preamble or quotes.
+  - name: concise
+    system: >-
+      You produce a shorter, tighter version of the passage while keeping the same meaning.
+      Remove redundancy. Output only the rewritten passage — no preamble.
+  - name: formal
+    system: >-
+      You rewrite the passage in a slightly more formal, polished register suitable for an article.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+  - name: casual
+    system: >-
+      You rewrite the passage in a more conversational, natural tone while staying coherent.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+  - name: grammar_cleanup
+    system: >-
+      You lightly edit the passage for grammar, clarity, and flow without changing meaning or adding content.
+      Output only the edited passage — no preamble.
+  - name: humanize
+    system: >-
+      You rewrite so the passage reads like careful human editing: varied rhythm, less template-like phrasing.
+      Preserve meaning. Output only the rewritten passage — no preamble.
+
+hard_transform_system: >-
+  You rewrite the passage in fresh wording while preserving facts, tone, and register.
+  Fix awkward phrasing if needed. Output only the rewritten passage — no preamble or quotes.
+hard_transform_temperature_range: [0.22, 0.58]
+hard_transform_top_p_range: [0.78, 1.0]
+hard_transform_max_tokens_min: 120
+hard_transform_max_tokens_max: 380
+
+mixed_paragraph_joiner: "\n\n"
+mixed_word_count_max: 600

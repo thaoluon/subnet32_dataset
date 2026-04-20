@@ -1,0 +1,71 @@
+# Preset: bounded high-quality runs (honors --num-pairs). For 3M quota builds, use ../datasets.yaml.
+huggingface_dataset: "monology/pile-uncopyrighted"
+split: "train"
+shuffle_buffer_size: 120000
+text_field: "text"
+meta_field: "meta"
+local_jsonl_path: null
+source: "huggingface"
+hf_load_max_retries: 15
+hf_load_retry_base_sec: 20
+hf_load_retry_max_sec: 180
+hf_stream_max_reconnects: 30
+hf_stream_reconnect_base_sec: 15
+hf_stream_reconnect_max_sec: 120
+hf_hub_download_timeout_sec: 300
+
+domain_quotas:
+  web: 0.20
+  academic: 0.20
+  code: 0.10
+  legal: 0.10
+  medical: 0.10
+  financial: 0.10
+  books: 0.20
+
+pile_subset_to_domain:
+  "Wikipedia (en)": web
+  "Wikipedia (de)": web
+  "OpenWebText2": web
+  "OpenSubtitles": web
+  "StackExchange": web
+  "Ubuntu IRC": web
+  "YoutubeSubtitles": web
+  "DM Mathematics": academic
+  "Enron Emails": web
+  "EuroParl": web
+  "FreeLaw": legal
+  "HackerNews": web
+  "NIH ExPorter": medical
+  "PubMed Central": medical
+  "USPTO Backgrounds": legal
+  "ArXiv": academic
+  "BookCorpus2": books
+  "Books3": books
+  "Gutenberg (PG-19)": books
+  "Github": code
+  "Pile-CC": web
+  "PhilPapers": academic
+
+random_seed: 42
+default_coarse_domain: web
+stream_num_shards: 1
+stream_shard_index: 0
+output_layout: by_label
+
+use_sample_quotas: false
+
+sample_targets:
+  human: 1500000
+  direct_ai: 700000
+  hard_ai: 500000
+  mixed: 300000
+
+max_documents_scan: null
+sample_counts_sync_every: 100
+dedup_normalize_text: true
+
+split_ratios:
+  train: 0.80
+  val: 0.10
+  test: 0.10

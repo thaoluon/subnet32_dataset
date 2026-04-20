@@ -1,0 +1,45 @@
+# Golden preset: multi-family mix, fewer Ollama tags than the default recipe (less VRAM churn).
+# OpenAI rows are optional: set omit_if_no_api_key true so runs work with Ollama-only if no key.
+ollama_base_urls:
+  - http://127.0.0.1:11434
+
+openai:
+  base_url: "https://api.openai.com/v1"
+  use_azure: false
+  api_key_env: "OPENAI_API_KEY"
+  omit_if_no_api_key: true
+  force_default_sampling: false
+  request_timeout_sec: 300
+  max_retries: 12
+
+train_generators:
+  - provider: openai
+    model: gpt-4.1-mini
+    weight: 0.28
+  - provider: ollama
+    model: "qwen3:14b"
+    weight: 0.42
+  - provider: ollama
+    model: "llama3.1:8b"
+    weight: 0.30
+
+stress_generators:
+  - provider: openai
+    model: gpt-4.1-mini
+    weight: 0.45
+  - provider: ollama
+    model: "deepseek-r1:8b"
+    weight: 0.30
+  - provider: ollama
+    model: "phi4:14b"
+    weight: 0.25
+
+train_models:
+  - qwen3:14b
+  - llama3.1:8b
+
+stress_models:
+  - deepseek-r1:8b
+  - phi4:14b
+
+default_model: "qwen3:14b"
